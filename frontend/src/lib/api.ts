@@ -1,8 +1,9 @@
 import axios from "axios";
-import { parseCookies, setCookie, destroyCookie } from "nookies";
+import { parseCookies, destroyCookie } from "nookies"; // setCookie gerekirse eklenir diye duruyordu
 
 // Backend API URL (Environment variable'dan alınır, yoksa default localhost)
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
+// .NET Web API default port: 5058 (HTTP) based on launchsettings
+const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5058/api";
 
 export const api = axios.create({
     baseURL: BACKEND_URL,
@@ -36,7 +37,10 @@ api.interceptors.response.use(
             destroyCookie(null, "token", { path: '/' });
             // Sadece tarayıcıdaysak login sayfasına yönlendir
             if (typeof window !== "undefined") {
-                window.location.href = "/login";
+                // Eğer zaten login sayfasındaysak loop'a girmesin
+                if (window.location.pathname !== '/login') {
+                    window.location.href = "/login";
+                }
             }
         }
         return Promise.reject(error);

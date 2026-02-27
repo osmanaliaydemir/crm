@@ -37,7 +37,8 @@ import { Label } from "@/components/ui/label"
 import { toast } from "sonner"
 import { useAnnouncementStore, AnnouncementType } from "@/store/announcementStore"
 import { useLeaveStore, LeaveStatus, LeaveType as LeaveRequestType } from "@/store/leaveStore"
-import { useExpenseStore, ExpenseCategory, ExpenseStatus } from "@/store/expenseStore"
+import { useExpenses, useUpdateExpenseStatus } from "@/hooks/api/use-hr"
+import { TableSkeleton } from "@/components/skeletons"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
     Table,
@@ -159,8 +160,9 @@ export default function HRPage() {
     // Leave State
     const { leaveRequests, updateLeaveStatus } = useLeaveStore()
 
-    // Expense State
-    const { expenses, updateExpenseStatus } = useExpenseStore()
+    // Expense API Hooks
+    const { data: expenses = [], isLoading: isLoadingExpenses } = useExpenses()
+    const { mutate: updateExpenseStatus } = useUpdateExpenseStatus()
 
     // Employee Form State
     const [isEmployeeDialogOpen, setIsEmployeeDialogOpen] = useState(false)
@@ -475,7 +477,7 @@ export default function HRPage() {
                             </div>
                             <div className="flex items-center gap-2">
                                 <Badge variant="outline" className="bg-blue-500/10 text-blue-500 border-blue-500/20 px-3">
-                                    {expenses.filter(e => e.status === "waiting").length} Onay Bekliyor
+                                    {expenses.filter((e: any) => e.status === "Bekliyor").length} Bekliyor
                                 </Badge>
                             </div>
                         </CardHeader>
@@ -493,94 +495,103 @@ export default function HRPage() {
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
-                                        {expenses.length === 0 ? (
+                                        {isLoadingExpenses ? (
+                                            <TableRow>
+                                                <TableCell colSpan={6} className="h-48 text-center text-muted-foreground p-0">
+                                                    <TableSkeleton />
+                                                </TableCell>
+                                            </TableRow>
+                                        ) : expenses.length === 0 ? (
                                             <TableRow>
                                                 <TableCell colSpan={6} className="text-center py-12 text-muted-foreground">
                                                     Kayıtlı masraf talebi bulunmuyor.
                                                 </TableCell>
                                             </TableRow>
                                         ) : (
-                                            expenses.map((exp) => (
-                                                <TableRow key={exp.id} className="hover:bg-muted/30 transition-colors">
-                                                    <TableCell className="pl-6">
-                                                        <div className="flex items-center gap-3">
-                                                            <Avatar className="h-8 w-8">
-                                                                <AvatarImage src={`https://api.dicebear.com/7.x/initials/svg?seed=${exp.employeeName}`} />
-                                                                <AvatarFallback>{exp.employeeName.substring(0, 2).toUpperCase()}</AvatarFallback>
-                                                            </Avatar>
+                                            expenses.map((exp: any) => {
+                                                const formattedDate = exp.date ? new Date(exp.date).toLocaleDateString("tr-TR") : "Belirtilmemiş"
+
+                                                return (
+                                                    <TableRow key={exp.id} className="hover:bg-muted/30 transition-colors">
+                                                        <TableCell className="pl-6">
+                                                            <div className="flex items-center gap-3">
+                                                                <Avatar className="h-8 w-8">
+                                                                    <AvatarImage src={`https://api.dicebear.com/7.x/initials/svg?seed=${exp.userName}`} />
+                                                                    <AvatarFallback>{exp.userName?.substring(0, 2).toUpperCase() || "UN"}</AvatarFallback>
+                                                                </Avatar>
+                                                                <div className="flex flex-col">
+                                                                    <span className="text-sm font-semibold">{exp.userName}</span>
+                                                                    <span className="text-[10px] text-muted-foreground">ID: {exp.id?.substring(0, 8)}</span>
+                                                                </div>
+                                                            </div >
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            <Badge variant="secondary" className="text-[10px] font-medium bg-muted">
+                                                                {exp.category}
+                                                            </Badge>
+                                                        </TableCell>
+                                                        <TableCell className="font-bold text-sm">
+                                                            ₺{(exp.amount || 0).toLocaleString()}
+                                                        </TableCell>
+                                                        <TableCell>
                                                             <div className="flex flex-col">
-                                                                <span className="text-sm font-semibold">{exp.employeeName}</span>
-                                                                <span className="text-[10px] text-muted-foreground">ID: {exp.id}</span>
+                                                                <span className="text-xs">{formattedDate}</span>
+                                                                <span className="text-[10px] text-muted-foreground truncate" title={exp.description}>
+                                                                    {exp.description}
+                                                                </span>
                                                             </div>
-                                                        </div >
-                                                    </TableCell>
-                                                    <TableCell>
-                                                        <Badge variant="secondary" className="text-[10px] font-medium bg-muted">
-                                                            {exp.category}
-                                                        </Badge>
-                                                    </TableCell>
-                                                    <TableCell className="font-bold text-sm">
-                                                        ₺{exp.amount.toLocaleString()}
-                                                    </TableCell>
-                                                    <TableCell>
-                                                        <div className="flex flex-col">
-                                                            <span className="text-xs">{exp.date}</span>
-                                                            <span className="text-[10px] text-muted-foreground truncate" title={exp.description}>
-                                                                {exp.description}
-                                                            </span>
-                                                        </div>
-                                                    </TableCell>
-                                                    <TableCell className="text-center">
-                                                        {exp.status === "waiting" && <Badge className="bg-amber-500/10 text-amber-600 border-amber-500/20">Beklemede</Badge>}
-                                                        {exp.status === "approved" && <Badge className="bg-blue-500/10 text-blue-600 border-blue-500/20">Onaylandı</Badge>}
-                                                        {exp.status === "paid" && <Badge className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20">Ödendi</Badge>}
-                                                        {exp.status === "rejected" && <Badge className="bg-red-500/10 text-red-600 border-red-500/20">Reddedildi</Badge>}
-                                                    </TableCell>
-                                                    <TableCell className="text-right pr-6">
-                                                        <div className="flex items-center justify-end gap-2">
-                                                            {exp.status === "waiting" && (
-                                                                <>
+                                                        </TableCell>
+                                                        <TableCell className="text-center">
+                                                            {exp.status === "Bekliyor" && <Badge className="bg-amber-500/10 text-amber-600 border-amber-500/20">Beklemede</Badge>}
+                                                            {exp.status === "Onaylandı" && <Badge className="bg-blue-500/10 text-blue-600 border-blue-500/20">Onaylandı</Badge>}
+                                                            {exp.status === "Ödendi" && <Badge className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20">Ödendi</Badge>}
+                                                            {exp.status === "Reddedildi" && <Badge className="bg-red-500/10 text-red-600 border-red-500/20">Reddedildi</Badge>}
+                                                        </TableCell>
+                                                        <TableCell className="text-right pr-6">
+                                                            <div className="flex items-center justify-end gap-2">
+                                                                {exp.status === "Bekliyor" && (
+                                                                    <>
+                                                                        <Button
+                                                                            size="sm"
+                                                                            variant="ghost"
+                                                                            className="h-8 w-8 p-0 text-red-500"
+                                                                            onClick={() => updateExpenseStatus({ id: exp.id, status: "Reddedildi" })}
+                                                                        >
+                                                                            <X className="h-4 w-4" />
+                                                                        </Button>
+                                                                        <Button
+                                                                            size="sm"
+                                                                            variant="ghost"
+                                                                            className="h-8 w-8 p-0 text-emerald-500"
+                                                                            onClick={() => updateExpenseStatus({ id: exp.id, status: "Onaylandı" })}
+                                                                        >
+                                                                            <Check className="h-4 w-4" />
+                                                                        </Button>
+                                                                    </>
+                                                                )}
+                                                                {exp.status === "Onaylandı" && (
                                                                     <Button
                                                                         size="sm"
-                                                                        variant="ghost"
-                                                                        className="h-8 w-8 p-0 text-red-500"
-                                                                        onClick={() => updateExpenseStatus(exp.id, "rejected")}
+                                                                        className="h-8 gap-2 bg-emerald-600 hover:bg-emerald-700 text-[11px]"
+                                                                        onClick={() => {
+                                                                            updateExpenseStatus({ id: exp.id, status: "Ödendi" });
+                                                                        }}
                                                                     >
-                                                                        <X className="h-4 w-4" />
+                                                                        <DollarSign className="h-3 w-3" />
+                                                                        Ödeme Yapıldı
                                                                     </Button>
-                                                                    <Button
-                                                                        size="sm"
-                                                                        variant="ghost"
-                                                                        className="h-8 w-8 p-0 text-emerald-500"
-                                                                        onClick={() => updateExpenseStatus(exp.id, "approved")}
-                                                                    >
-                                                                        <Check className="h-4 w-4" />
-                                                                    </Button>
-                                                                </>
-                                                            )}
-                                                            {exp.status === "approved" && (
-                                                                <Button
-                                                                    size="sm"
-                                                                    className="h-8 gap-2 bg-emerald-600 hover:bg-emerald-700 text-[11px]"
-                                                                    onClick={() => {
-                                                                        updateExpenseStatus(exp.id, "paid");
-                                                                        toast.success("Ödeme kaydı yapıldı.");
-                                                                    }}
-                                                                >
-                                                                    <DollarSign className="h-3 w-3" />
-                                                                    Ödeme Yapıldı
-                                                                </Button>
-                                                            )}
-                                                            {exp.status === "paid" && (
-                                                                <span className="text-[10px] text-muted-foreground italic">Arşivlendi</span>
-                                                            )}
-                                                            {exp.status === "rejected" && (
-                                                                <span className="text-[10px] text-red-400 italic">Reddedildi</span>
-                                                            )}
-                                                        </div>
-                                                    </TableCell>
-                                                </TableRow>
-                                            ))
+                                                                )}
+                                                                {exp.status === "Ödendi" && (
+                                                                    <span className="text-[10px] text-muted-foreground italic">Arşivlendi</span>
+                                                                )}
+                                                                {exp.status === "Reddedildi" && (
+                                                                    <span className="text-[10px] text-red-400 italic">Reddedildi</span>
+                                                                )}
+                                                            </div>
+                                                        </TableCell>
+                                                    </TableRow>
+                                                )
+                                            })
                                         )}
                                     </TableBody>
                                 </Table>

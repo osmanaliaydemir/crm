@@ -9,7 +9,8 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import { toast } from "sonner"
 import { useRouter } from "next/navigation"
 import { setCookie } from "nookies"
-import { api } from "@/lib/api"
+import { authService } from "@/lib/services/auth.service"
+import { useAuthStore } from "@/store/authStore"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -26,6 +27,8 @@ export default function LoginPage() {
     const [showPassword, setShowPassword] = useState(false)
     const router = useRouter()
 
+    const login = useAuthStore(state => state.login)
+
     const {
         register,
         handleSubmit,
@@ -36,25 +39,25 @@ export default function LoginPage() {
 
     const onSubmit = async (data: LoginFormValues) => {
         try {
-            await new Promise((resolve) => setTimeout(resolve, 800))
-            const token = "demo-jwt-token-12345";
-            if (data.email === "osmanaliaydemir@hotmail.com" && data.password === "Test123!") {
-                setCookie(null, 'token', token, {
-                    maxAge: 30 * 24 * 60 * 60,
-                    path: '/',
-                });
-                toast.success("Giriş Başarılı", {
-                    description: "Yönetim paneline yönlendiriliyorsunuz...",
-                });
-                router.push("/crm");
-            } else {
-                toast.error("Giriş Başarısız", {
-                    description: "Kullanıcı adı veya şifre hatalı.",
-                });
-            }
-        } catch (error) {
-            toast.error("Sistem Hatası", {
-                description: "Geçici olarak giriş yapılamıyor, lütfen daha sonra tekrar deneyin.",
+            const response = await authService.login(data);
+
+            // Başarılıysa Token'ı kaydet
+            setCookie(null, 'token', response.token, {
+                maxAge: 30 * 24 * 60 * 60, // 30 gün
+                path: '/',
+            });
+
+            // Global State güncelle
+            login(response.user);
+
+            toast.success("Giriş Başarılı", {
+                description: "Yönetim paneline yönlendiriliyorsunuz...",
+            });
+            router.push("/");
+        } catch (error: any) {
+            const message = error.response?.data?.message || "Kullanıcı adı veya şifre hatalı.";
+            toast.error("Giriş Başarısız", {
+                description: message,
             });
         }
     }

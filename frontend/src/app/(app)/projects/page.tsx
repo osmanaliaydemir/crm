@@ -80,6 +80,8 @@ import { z } from "zod"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { toast } from "sonner"
+import { TableSkeleton } from "@/components/ui/table-skeleton"
+import { useProjects, useCreateProject } from "@/hooks/api/use-projects"
 
 const projectSchema = z.object({
     id: z.string().optional(),
@@ -154,7 +156,16 @@ const initialProjects: ProjectType[] = [
 ]
 
 export default function ProjectsPage() {
-    const [projects, setProjects] = useState<ProjectType[]>(initialProjects)
+    const { data: projects = [], isLoading } = useProjects()
+    const { mutate: createProject } = useCreateProject()
+
+    // Yöneticileri API'dan gelen projelerden çekelim
+    const managerSet = new Set<string>()
+    projects.forEach((p: any) => {
+        if (p.manager) managerSet.add(p.manager)
+    })
+    const managers = Array.from(managerSet).map(m => ({ label: m, value: m }))
+
     const [searchTerm, setSearchTerm] = useState("")
     const [selectedManager, setSelectedManager] = useState("all")
     const [activeTab, setActiveTab] = useState("all")
@@ -175,8 +186,8 @@ export default function ProjectsPage() {
         }
     })
 
-    const filteredProjects = projects.filter(prj => {
-        const matchesSearch = prj.name.toLowerCase().includes(searchTerm.toLowerCase()) || prj.client.toLowerCase().includes(searchTerm.toLowerCase())
+    const filteredProjects = projects.filter((prj: any) => {
+        const matchesSearch = prj.name.toLowerCase().includes(searchTerm.toLowerCase()) || (prj.customerName && prj.customerName.toLowerCase().includes(searchTerm.toLowerCase()))
         const matchesManager = selectedManager === "all" || prj.manager === selectedManager
 
         let matchesTab = true
@@ -186,7 +197,6 @@ export default function ProjectsPage() {
         return matchesSearch && matchesManager && matchesTab
     })
 
-    const managers = Array.from(new Set(projects.map(p => p.manager))).map(m => ({ label: m, value: m }))
     const statuses = [
         { label: "Tamamlandı", value: "Tamamlandı" },
         { label: "Devam Ediyor", value: "Devam Ediyor" },
@@ -195,51 +205,47 @@ export default function ProjectsPage() {
     ]
 
     const handleExport = () => {
-        const exportData = filteredProjects.map(p => ({
+        const exportData = filteredProjects.map((p: any) => ({
             'ID': p.id,
             'Proje Adı': p.name,
-            'Müşteri': p.client,
-            'Yönetici': p.manager,
+            'Müşteri': p.customerName || p.client || "-",
+            'Yönetici': p.manager || "-",
             'Durum': p.status,
-            'İlerleme': `%${p.progress}`,
-            'Teslim Tarihi': p.dueDate,
-            'Tamamlanan Görev': p.tasksCompleted,
-            'Toplam Görev': p.tasksTotal
+            'İlerleme': `%${p.progress || 0}`,
+            'Teslim Tarihi': p.dueDate || p.startDate,
+            'Tamamlanan Görev': p.tasks?.filter((t: any) => t.status === "Done").length || 0,
+            'Toplam Görev': p.tasks?.length || 0
         }))
         exportToCSV(exportData, "Projeler_Listesi")
         toast.success("Proje listesi CSV olarak indirildi.")
     }
 
     const onSubmit = (data: ProjectFormValues) => {
-        const newProject: ProjectType = {
-            id: `PRJ-00${projects.length + 1}`,
+        const formattedData = {
             name: data.name,
-            client: data.client,
-            status: data.status,
-            progress: data.progress,
-            dueDate: data.dueDate || "",
-            manager: data.manager,
-            tasksCompleted: 0,
-            tasksTotal: 10
+            // Mock Müşteri (Şimdilik boş geçiyoruz, gerçekte select list'ten CustomerId gelir)
+            description: "Proje Detayları",
+            startDate: new Date().toISOString(),
+            status: data.status
         }
-        setProjects([newProject, ...projects])
-        toast.success("Yeni proje başarıyla oluşturuldu.")
-        setIsDialogOpen(false)
-        form.reset()
+        createProject(formattedData, {
+            onSuccess: () => {
+                setIsDialogOpen(false)
+                form.reset()
+            }
+        })
     }
 
     const deleteProject = () => {
         if (projectToDelete) {
-            setProjects(projects.filter(p => p.id !== projectToDelete))
-            toast.success("Proje başarıyla silindi.")
+            toast.info("Proje silme işlemi API'ye eklendikten sonra tamamlanacak.")
             setIsDeleteDialogOpen(false)
             setProjectToDelete(null)
         }
     }
 
     const updateProjectStatus = (id: string, newStatus: string) => {
-        setProjects(projects.map(p => p.id === id ? { ...p, status: newStatus, progress: newStatus === "Tamamlandı" ? 100 : p.progress } : p))
-        toast.success(`Proje durumu "${newStatus}" olarak güncellendi.`)
+        toast.info("Proje durumu güncelleme API servisi eklendiğinde devreye girecek.")
     }
 
     const getStatusBadge = (status: string) => {
@@ -444,30 +450,36 @@ export default function ProjectsPage() {
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {filteredProjects.length > 0 ? (
-                                filteredProjects.map((prj) => (
+                            {isLoading ? (
+                                <TableRow>
+                                    <TableCell colSpan={8} className="h-48 text-center text-muted-foreground p-0">
+                                        <TableSkeleton columns={8} rows={5} />
+                                    </TableCell>
+                                </TableRow>
+                            ) : filteredProjects.length > 0 ? (
+                                filteredProjects.map((prj: any) => (
                                     <TableRow key={prj.id} className="group hover:bg-muted/30 transition-colors">
-                                        <TableCell className="font-mono text-xs text-muted-foreground group-hover:text-primary transition-colors">{prj.id}</TableCell>
+                                        <TableCell className="font-mono text-xs text-muted-foreground group-hover:text-primary transition-colors">{prj.id?.substring(0, 8) || "N/A"}</TableCell>
                                         <TableCell className="font-medium text-primary cursor-pointer hover:underline">
                                             {prj.name}
                                         </TableCell>
-                                        <TableCell className="text-sm text-muted-foreground group-hover:text-foreground/80 transition-colors">{prj.client}</TableCell>
-                                        <TableCell className="text-sm group-hover:text-foreground/80 transition-colors">{prj.manager}</TableCell>
+                                        <TableCell className="text-sm text-muted-foreground group-hover:text-foreground/80 transition-colors">{prj.customerName || "Bilinmeyen Müşteri"}</TableCell>
+                                        <TableCell className="text-sm group-hover:text-foreground/80 transition-colors">{prj.manager || "-"}</TableCell>
                                         <TableCell>
                                             <div className="flex flex-col gap-1 w-full max-w-[150px]">
                                                 <div className="flex justify-between text-[10px] text-muted-foreground">
-                                                    <span>{prj.tasksCompleted} / {prj.tasksTotal} Görev</span>
-                                                    <span>%{prj.progress}</span>
+                                                    <span>{prj.tasks?.filter((t: any) => t.status === "Done").length || 0} / {prj.tasks?.length || 0} Görev</span>
+                                                    <span>%{prj.progress || 0}</span>
                                                 </div>
                                                 <div className="h-1.5 w-full bg-muted overflow-hidden rounded-full">
                                                     <div
-                                                        className={`h-full transition-all duration-500 ease-out ${prj.progress === 100 ? 'bg-green-500' : 'bg-primary'}`}
-                                                        style={{ width: `${prj.progress}%` }}
+                                                        className={`h-full transition-all duration-500 ease-out ${(prj.progress || 0) === 100 ? 'bg-green-500' : 'bg-primary'}`}
+                                                        style={{ width: `${prj.progress || 0}%` }}
                                                     />
                                                 </div>
                                             </div>
                                         </TableCell>
-                                        <TableCell className="text-sm font-medium">{prj.dueDate}</TableCell>
+                                        <TableCell className="text-sm font-medium">{new Date(prj.startDate).toLocaleDateString('tr-TR')}</TableCell>
                                         <TableCell>{getStatusBadge(prj.status)}</TableCell>
                                         <TableCell className="text-right">
                                             <DropdownMenu>

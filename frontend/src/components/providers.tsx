@@ -5,6 +5,7 @@ import { ThemeProvider as NextThemesProvider } from "next-themes"
 import { Toaster } from "sonner"
 import { useState } from "react"
 import { ThemeColorProvider } from "./theme-color-provider"
+import { AuthInitializer } from "./auth-initializer"
 
 export function Providers({ children }: { children: React.ReactNode }) {
     // SSR sorunlarını önlemek için QueryClient instance'ını useState içinde tutuyoruz
@@ -21,7 +22,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
         <NextThemesProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
             <ThemeColorProvider />
             <QueryClientProvider client={queryClient}>
-                {children}
+                <AuthInitializer>
+                    {children}
+                </AuthInitializer>
                 <Toaster richColors position="top-right" />
             </QueryClientProvider>
         </NextThemesProvider>

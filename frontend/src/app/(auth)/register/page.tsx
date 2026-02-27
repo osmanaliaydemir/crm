@@ -8,6 +8,7 @@ import { z } from "zod"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { toast } from "sonner"
 import { useRouter } from "next/navigation"
+import { authService } from "@/lib/services/auth.service"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -37,7 +38,7 @@ export default function RegisterPage() {
 
     const onSubmit = async (data: RegisterFormValues) => {
         try {
-            await new Promise((resolve) => setTimeout(resolve, 1000))
+            await authService.register(data);
 
             toast.success("Kayıt Başarılı!", {
                 description: "Hesabınız oluşturuldu. Giriş ekranına yönlendiriliyorsunuz...",
@@ -47,9 +48,10 @@ export default function RegisterPage() {
                 router.push("/login")
             }, 1000)
 
-        } catch (error) {
+        } catch (error: any) {
+            const message = error.response?.data?.message || "Sistemde bir hata oluştu. Lütfen tekrar deneyin.";
             toast.error("Kayıt Başarısız", {
-                description: "Sistemde bir hata oluştu. Lütfen tekrar deneyin.",
+                description: message,
             })
         }
     }

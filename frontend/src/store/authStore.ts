@@ -18,18 +18,9 @@ interface AuthState {
     switchRole: (role: UserRole) => void;
 }
 
-// Varsayılan mock kullanıcı. Uygulama demo amaçlı olduğundan admin başlatıyoruz
-const defaultMockUser: User = {
-    id: "usr-001",
-    name: "Osman Ali",
-    email: "osmanaliaydemir@hotmail.com",
-    role: "admin",
-    avatar: "OA"
-};
-
 export const useAuthStore = create<AuthState>((set) => ({
-    user: defaultMockUser,
-    isAuthenticated: true,
+    user: null,
+    isAuthenticated: false,
 
     login: (userData) => set({
         user: userData,

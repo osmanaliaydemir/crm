@@ -58,7 +58,7 @@ export function TransactionTable({
                     filteredTransactions.map((trx) => (
                         <TableRow key={trx.id} className="group hover:bg-muted/30 transition-colors">
                             <TableCell className="text-muted-foreground text-sm font-medium whitespace-nowrap group-hover:text-foreground/80 transition-colors">
-                                {trx.date}
+                                {new Date(trx.date).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short', year: 'numeric' })}
                             </TableCell>
                             <TableCell className="font-medium group-hover:text-primary transition-colors">
                                 {trx.description}

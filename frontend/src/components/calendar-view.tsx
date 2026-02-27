@@ -19,6 +19,7 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { useEvents, useCreateEvent, useUpdateEvent, useDeleteEvent } from "@/hooks/api/use-calendar"
 import { cn } from "@/lib/utils"
 import {
     Dialog,
@@ -47,37 +48,26 @@ interface Event {
     manager: string
 }
 
-const initialEvents: Event[] = [
-    {
-        id: "1",
-        title: "TechCorp ERP Teslimi",
-        date: new Date(2023, 10, 15), // 15 Nov 2023
-        type: "project",
-        description: "ERP entegrasyon projesinin final teslimi ve QA onayı.",
-        manager: "Osman Ali"
-    },
-    {
-        id: "2",
-        title: "Can Tekstil Toplantı",
-        date: new Date(2023, 11, 1), // 1 Dec 2023
-        type: "meeting",
-        description: "Yeni e-ticaret altyapısı hakkında teknik değerlendirme.",
-        manager: "Ahmet Yılmaz"
-    },
-    {
-        id: "3",
-        title: "Global Lojistik Teklif Kapanış",
-        date: new Date(2023, 9, 20), // 20 Oct 2023
-        type: "deal",
-        description: "Yıllık bakım sözleşmesi için son teklif revizyonu.",
-        manager: "Zeynep Ata"
-    }
-]
-
 export function CalendarView() {
-    const [events, setEvents] = React.useState<Event[]>(initialEvents)
-    const [currentDate, setCurrentDate] = React.useState(new Date(2023, 10, 1)) // Nov 2023 for mock consistency
-    const [selectedDate, setSelectedDate] = React.useState<Date | null>(new Date(2023, 10, 15))
+    const today = new Date()
+    const [currentDate, setCurrentDate] = React.useState(new Date(today.getFullYear(), today.getMonth(), 1))
+    const [selectedDate, setSelectedDate] = React.useState<Date | null>(today)
+
+    // API Hooks
+    const { data: rawEvents = [], isLoading } = useEvents()
+    const { mutate: addEvent } = useCreateEvent()
+    const { mutate: updateEvent } = useUpdateEvent()
+    const { mutate: deleteEvent } = useDeleteEvent()
+
+    // Normalize DB data to local mapped structure
+    const events: Event[] = rawEvents.map((e: any) => ({
+        id: e.id,
+        title: e.title,
+        date: new Date(e.startDate),
+        type: e.type === "Proje" ? "project" : e.type === "Satış" ? "deal" : "meeting",
+        description: e.description || "",
+        manager: e.userName || "Atanmadı"
+    }))
 
     // Dialog states
     const [isDialogOpen, setIsDialogOpen] = React.useState(false)
@@ -141,36 +131,41 @@ export function CalendarView() {
             return
         }
 
+        const backendType = formType === "project" ? "Proje" : formType === "deal" ? "Satış" : "Toplantı"
+        const eventDate = selectedDate || new Date()
+        const startIso = eventDate.toISOString()
+        const endIso = new Date(eventDate.getTime() + 60 * 60 * 1000).toISOString() // 1 hour later
+
         if (editingEvent) {
             // Edit
-            setEvents(prev => prev.map(e => e.id === editingEvent.id ? {
-                ...e,
+            updateEvent({
+                id: editingEvent.id,
                 title: formTitle,
                 description: formDesc,
-                type: formType,
-                manager: formManager
-            } : e))
-            toast.success("Etkinlik güncellendi.")
+                type: backendType,
+                startDate: startIso,
+                endDate: endIso
+            }, {
+                onSuccess: () => setIsDialogOpen(false)
+            })
         } else {
             // Add
-            const newEvent: Event = {
-                id: Math.random().toString(36).substr(2, 9),
+            addEvent({
                 title: formTitle,
                 description: formDesc,
-                type: formType,
-                manager: formManager,
-                date: selectedDate || new Date()
-            }
-            setEvents(prev => [...prev, newEvent])
-            toast.success("Yeni etkinlik eklendi.")
+                type: backendType,
+                startDate: startIso,
+                endDate: endIso
+            }, {
+                onSuccess: () => setIsDialogOpen(false)
+            })
         }
-        setIsDialogOpen(false)
     }
 
     const handleDelete = (id: string) => {
-        setEvents(prev => prev.filter(e => e.id !== id))
-        toast.success("Etkinlik silindi.")
-        setIsDialogOpen(false)
+        deleteEvent(id, {
+            onSuccess: () => setIsDialogOpen(false)
+        })
     }
 
     return (
@@ -190,7 +185,11 @@ export function CalendarView() {
                         <Button variant="outline" size="icon" onClick={prevMonth} className="h-8 w-8">
                             <ChevronLeft className="h-4 w-4" />
                         </Button>
-                        <Button variant="outline" size="sm" onClick={() => setCurrentDate(new Date(2023, 10, 1))} className="h-8">
+                        <Button variant="outline" size="sm" onClick={() => {
+                            const today = new Date();
+                            setCurrentDate(new Date(today.getFullYear(), today.getMonth(), 1));
+                            setSelectedDate(today);
+                        }} className="h-8">
                             Bugün
                         </Button>
                         <Button variant="outline" size="icon" onClick={nextMonth} className="h-8 w-8">

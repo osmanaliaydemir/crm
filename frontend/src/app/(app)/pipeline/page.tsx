@@ -81,98 +81,30 @@ import { createPortal } from "react-dom"
 const dealSchema = z.object({
     id: z.string().optional(),
     title: z.string().min(2, "Fırsat adı en az 2 karakter olmalıdır."),
-    customer: z.string().min(2, "Müşteri adı gereklidir."),
+    customerId: z.string().min(1, "Müşteri UID seçimi zorunlu"), // Backend foreign key
     value: z.coerce.number().min(0, "Tutar 0'dan küçük olamaz."),
-    expectedClose: z.string().min(2, "Kapanış tarihi gereklidir."),
-    probability: z.string().min(1, "Olasılık değeri gereklidir."),
-    assignee: z.string().min(2, "Sorumlu kısa adı gereklidir."),
-    columnId: z.string().min(1, "Aşama seçimi zorunludur."),
+    expectedCloseDate: z.string().min(2, "Kapanış tarihi gereklidir."),
+    probability: z.coerce.number().min(1, "Olasılık değeri gereklidir."),
+    assignedUserId: z.string().min(1, "Sorumlu id gerekir."),
+    stage: z.string().min(1, "Aşama seçimi zorunludur."),
+    customerName: z.string().optional(),
+    assigneeName: z.string().optional()
 })
 
 type DealFormValues = z.infer<typeof dealSchema>
 
-const initialColumns = [
-    {
-        id: "col-1",
-        title: "Potansiyel (Lead)",
-        color: "border-l-4 border-l-blue-500",
-        deals: [
-            {
-                id: "d-1",
-                title: "ERP Modernizasyon",
-                customer: "TechCorp A.Ş.",
-                value: 150000,
-                expectedClose: "15 Kas",
-                probability: "20",
-                assignee: "OA",
-                columnId: "col-1",
-                ageInDays: 45 // Sıcaklık ölçeği için
-            },
-            {
-                id: "d-2",
-                title: "Bulut Yedekleme Altyapısı",
-                customer: "SecureData Ltd.",
-                value: 45000,
-                expectedClose: "20 Eki",
-                probability: "30",
-                assignee: "ZA",
-                columnId: "col-1",
-                ageInDays: 12
-            }
-        ]
-    },
-    {
-        id: "col-2",
-        title: "Görüşme (Qualified)",
-        color: "border-l-4 border-l-yellow-500",
-        deals: [
-            {
-                id: "d-3",
-                title: "E-Ticaret Entegrasyonu",
-                customer: "Can Tekstil",
-                value: 85000,
-                expectedClose: "10 Eki",
-                probability: "50",
-                assignee: "OA",
-                columnId: "col-2"
-            }
-        ]
-    },
-    {
-        id: "col-3",
-        title: "Teklif Sunuldu",
-        color: "border-l-4 border-l-orange-500",
-        deals: [
-            {
-                id: "d-4",
-                title: "50 Kullanıcılı CRM Lisansı",
-                customer: "Global Lojistik",
-                value: 120000,
-                expectedClose: "05 Eki",
-                probability: "80",
-                assignee: "MK",
-                columnId: "col-3"
-            }
-        ]
-    },
-    {
-        id: "col-4",
-        title: "Kazanıldı (Won)",
-        color: "border-l-4 border-l-green-500",
-        deals: [
-            {
-                id: "d-6",
-                title: "Ağ Altyapısı Yenileme",
-                customer: "Acme Corp",
-                value: 350000,
-                expectedClose: "Bugün",
-                probability: "100",
-                assignee: "ZA",
-                columnId: "col-4"
-            }
-        ]
-    }
+// Base Column Definitions (Backend'deki aşamaları temsil eder)
+const STAGE_COLUMNS = [
+    { id: "Lead", title: "Potansiyel (Lead)", color: "border-l-4 border-l-blue-500" },
+    { id: "Qualified", title: "Görüşme (Qualified)", color: "border-l-4 border-l-yellow-500" },
+    { id: "Proposal", title: "Teklif Sunuldu", color: "border-l-4 border-l-orange-500" },
+    { id: "Won", title: "Kazanıldı (Won)", color: "border-l-4 border-l-green-500" },
+    { id: "Lost", title: "Kaybedildi (Lost)", color: "border-l-4 border-l-red-500" } // Kaybeden kolonu
 ]
+
+import { useDeals, useCreateDeal, useUpdateDeal, useDeleteDeal } from "@/hooks/api/use-pipeline"
+import { useCustomers } from "@/hooks/api/use-crm"
+import { Skeleton } from "@/components/ui/skeleton"
 
 // --- DND Components ---
 
@@ -222,7 +154,7 @@ function DealCardContent({ deal, onEdit, onDelete }: any) {
             <CardContent className="p-4 pt-0 pl-6 space-y-3">
                 <div className="flex items-center text-xs text-muted-foreground">
                     <User className="mr-1 h-3 w-3 shrink-0" />
-                    <span className="truncate">{deal.customer}</span>
+                    <span className="truncate">{deal.customerName || "Bilinmeyen Müşteri"}</span>
                 </div>
                 <div className="flex items-center justify-between text-sm">
                     <div className="flex items-center font-bold text-primary">
@@ -237,11 +169,11 @@ function DealCardContent({ deal, onEdit, onDelete }: any) {
             <CardFooter className="p-4 pt-0 pl-6 flex justify-between items-center border-t border-dashed mt-2 bg-muted/10 rounded-b-xl">
                 <div className="flex items-center text-xs text-muted-foreground mt-2">
                     <Calendar className="mr-1 h-3 w-3" />
-                    {deal.expectedClose}
+                    {new Date(deal.expectedCloseDate).toLocaleDateString('tr-TR')}
                 </div>
                 <Avatar className="h-6 w-6 mt-2">
                     <AvatarFallback className="text-[10px] bg-primary/10 text-primary">
-                        {deal.assignee}
+                        {deal.assigneeName || "???"}
                     </AvatarFallback>
                 </Avatar>
             </CardFooter>
@@ -314,12 +246,31 @@ function DroppableColumn({ column, onAddClick, onEdit, onDelete }: any) {
 }
 
 export default function PipelinePage() {
-    const [columns, setColumns] = useState(initialColumns)
     const [isDialogOpen, setIsDialogOpen] = useState(false)
     const [editingDeal, setEditingDeal] = useState<DealFormValues | null>(null)
-    const [dealToDelete, setDealToDelete] = useState<{ id: string, columnId: string } | null>(null)
+    const [dealToDelete, setDealToDelete] = useState<{ id: string, stage: string } | null>(null)
     const [automationDeal, setAutomationDeal] = useState<any | null>(null)
     const [isAutomationOpen, setIsAutomationOpen] = useState(false)
+
+    // Layout Board State
+    const [columns, setColumns] = useState(STAGE_COLUMNS.map(c => ({ ...c, deals: [] as any[] })))
+
+    // API Hooks
+    const { data: serverDeals, isLoading } = useDeals();
+    const { data: customerData } = useCustomers();
+    const createDealMutation = useCreateDeal();
+    const updateDealMutation = useUpdateDeal();
+    const deleteDealMutation = useDeleteDeal();
+
+    // Map Backend Data Context to UI Strategy
+    useEffect(() => {
+        if (serverDeals) {
+            setColumns(STAGE_COLUMNS.map(col => ({
+                ...col,
+                deals: serverDeals.filter(d => d.stage === col.id)
+            })))
+        }
+    }, [serverDeals])
 
     // Dnd States
     const [activeDeal, setActiveDeal] = useState<any | null>(null)
@@ -338,25 +289,25 @@ export default function PipelinePage() {
         resolver: zodResolver(dealSchema) as any,
         defaultValues: {
             title: "",
-            customer: "",
+            customerId: "",
             value: 0,
-            expectedClose: "",
-            probability: "20",
-            assignee: "OA",
-            columnId: "col-1"
+            expectedCloseDate: new Date().toISOString().split('T')[0], // yyyy-MM-dd
+            probability: 20,
+            assignedUserId: "current-user-id", // mock
+            stage: "Lead"
         }
     })
 
-    const handleAddClick = (columnId?: string) => {
+    const handleAddClick = (stage?: string) => {
         setEditingDeal(null)
         form.reset({
             title: "",
-            customer: "",
+            customerId: "",
             value: 0,
-            expectedClose: "",
-            probability: "20",
-            assignee: "OA",
-            columnId: columnId || "col-1"
+            expectedCloseDate: new Date().toISOString().split('T')[0],
+            probability: 20,
+            assignedUserId: "current-user-id",
+            stage: stage || "Lead"
         })
         setIsDialogOpen(true)
     }
@@ -366,66 +317,31 @@ export default function PipelinePage() {
         form.reset({
             id: deal.id,
             title: deal.title,
-            customer: deal.customer,
+            customerId: deal.customerId,
             value: deal.value,
-            expectedClose: deal.expectedClose,
+            expectedCloseDate: deal.expectedCloseDate?.split('T')[0] || new Date().toISOString().split('T')[0],
             probability: deal.probability,
-            assignee: deal.assignee,
-            columnId: deal.columnId
+            assignedUserId: deal.assignedUserId,
+            stage: deal.stage
         })
         setIsDialogOpen(true)
     }
 
-    const onSubmit = (data: DealFormValues) => {
+    const onSubmit = async (data: DealFormValues) => {
         if (editingDeal) {
             // Edit
-            const updatedColumns = columns.map(col => {
-                // If it was in this column but moved to another
-                if (col.id === editingDeal.columnId && col.id !== data.columnId) {
-                    return { ...col, deals: col.deals.filter(d => d.id !== editingDeal.id) }
-                }
-                // If it was moved to this column
-                if (col.id === data.columnId && editingDeal.columnId !== data.columnId) {
-                    const newDeal = { ...data, id: editingDeal.id || `d-${Date.now()}` }
-                    return { ...col, deals: [...col.deals, newDeal as any] }
-                }
-                // If it stayed in the same column
-                if (col.id === data.columnId && editingDeal.columnId === data.columnId) {
-                    return { ...col, deals: col.deals.map(d => d.id === editingDeal.id ? { ...data, id: editingDeal.id } as any : d) }
-                }
-                return col
-            })
-            setColumns(updatedColumns)
-            toast.success("Fırsat Güncellendi", { description: `${data.title} başarıyla güncellendi.` })
+            await updateDealMutation.mutateAsync({ id: editingDeal.id!, data })
         } else {
             // Add
-            const newDeal = {
-                ...data,
-                id: `d-${Date.now()}`
-            }
-            const updatedColumns = columns.map(col => {
-                if (col.id === data.columnId) {
-                    return { ...col, deals: [newDeal as any, ...col.deals] }
-                }
-                return col
-            })
-            setColumns(updatedColumns)
-            toast.success("Fırsat Eklendi", { description: `${data.title} Kanban panosuna eklendi.` })
+            await createDealMutation.mutateAsync(data)
         }
         setIsDialogOpen(false)
     }
 
-    const confirmDelete = () => {
+    const confirmDelete = async () => {
         if (dealToDelete) {
-            const updatedColumns = columns.map(col => {
-                if (col.id === dealToDelete.columnId) {
-                    return { ...col, deals: col.deals.filter(d => d.id !== dealToDelete.id) }
-                }
-                return col
-            })
-            setColumns(updatedColumns)
+            await deleteDealMutation.mutateAsync(dealToDelete.id)
             setDealToDelete(null)
-            toast.success("Fırsat Silindi", { description: "Kayıt başarıyla kaldırıldı." })
         }
     }
 
@@ -492,9 +408,10 @@ export default function PipelinePage() {
 
         // Deal -> Empty Column
         if (activeData.type === "Deal" && overData.type === "Column") {
-            const activeColId = activeData.deal.columnId
+            const activeColId = activeData.deal.stage
             const overColId = overData.column.id
             if (activeColId !== overColId) {
+                // Optimistic UI updates
                 setColumns(cols => {
                     const activeColIndex = cols.findIndex(c => c.id === activeColId)
                     const overColIndex = cols.findIndex(c => c.id === overColId)
@@ -502,13 +419,16 @@ export default function PipelinePage() {
                     const newCols = [...cols]
                     const activeDealIndex = newCols[activeColIndex].deals.findIndex(d => d.id === activeId)
 
-                    const movingDeal = { ...newCols[activeColIndex].deals[activeDealIndex], columnId: overColId }
+                    const movingDeal = { ...newCols[activeColIndex].deals[activeDealIndex], stage: overColId }
                     newCols[activeColIndex].deals.splice(activeDealIndex, 1)
 
                     newCols[overColIndex].deals.push(movingDeal as any)
 
-                    // Automation trigger
-                    if (overColId === "col-4") {
+                    // Execute actual database update behind scenes
+                    updateDealMutation.mutateAsync({ id: activeId as string, data: { stage: overColId } })
+
+                    // Trigger Automation if won
+                    if (overColId === "Won") {
                         setAutomationDeal(movingDeal)
                         setIsAutomationOpen(true)
                     }
@@ -566,7 +486,7 @@ export default function PipelinePage() {
                                 column={column}
                                 onAddClick={handleAddClick}
                                 onEdit={handleEditClick}
-                                onDelete={(deal: any) => setDealToDelete({ id: deal.id, columnId: deal.columnId })}
+                                onDelete={(deal: any) => setDealToDelete({ id: deal.id, stage: deal.stage })}
                             />
                         ))}
                     </div>
@@ -612,13 +532,22 @@ export default function PipelinePage() {
 
                             <FormField
                                 control={form.control}
-                                name="customer"
+                                name="customerId"
                                 render={({ field }) => (
                                     <FormItem>
                                         <FormLabel>Müşteri</FormLabel>
-                                        <FormControl>
-                                            <Input placeholder="Firma veya kişi ara..." {...field} />
-                                        </FormControl>
+                                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                            <FormControl>
+                                                <SelectTrigger>
+                                                    <SelectValue placeholder="Müşteri Seçin" />
+                                                </SelectTrigger>
+                                            </FormControl>
+                                            <SelectContent>
+                                                {customerData?.map(c => (
+                                                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
                                         <FormMessage />
                                     </FormItem>
                                 )}
@@ -656,12 +585,12 @@ export default function PipelinePage() {
                             <div className="grid grid-cols-2 gap-4">
                                 <FormField
                                     control={form.control}
-                                    name="expectedClose"
+                                    name="expectedCloseDate"
                                     render={({ field }) => (
                                         <FormItem>
                                             <FormLabel>Tahmini Kapanış</FormLabel>
                                             <FormControl>
-                                                <Input placeholder="Örn: 15 Kas" {...field} />
+                                                <Input type="date" {...field} />
                                             </FormControl>
                                             <FormMessage />
                                         </FormItem>
@@ -669,12 +598,12 @@ export default function PipelinePage() {
                                 />
                                 <FormField
                                     control={form.control}
-                                    name="assignee"
+                                    name="assignedUserId"
                                     render={({ field }) => (
                                         <FormItem>
-                                            <FormLabel>Sorumlu (Kısa Kod)</FormLabel>
+                                            <FormLabel>Sorumlu (Kısa Kod/ID)</FormLabel>
                                             <FormControl>
-                                                <Input placeholder="OA, ZA vb." {...field} />
+                                                <Input placeholder="c7b13... vb." {...field} />
                                             </FormControl>
                                             <FormMessage />
                                         </FormItem>
@@ -684,7 +613,7 @@ export default function PipelinePage() {
 
                             <FormField
                                 control={form.control}
-                                name="columnId"
+                                name="stage"
                                 render={({ field }) => (
                                     <FormItem>
                                         <FormLabel>Bulunduğu Aşama</FormLabel>
@@ -695,7 +624,7 @@ export default function PipelinePage() {
                                                 </SelectTrigger>
                                             </FormControl>
                                             <SelectContent>
-                                                {columns.map(col => (
+                                                {STAGE_COLUMNS.map(col => (
                                                     <SelectItem key={col.id} value={col.id}>{col.title}</SelectItem>
                                                 ))}
                                             </SelectContent>

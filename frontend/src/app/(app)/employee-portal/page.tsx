@@ -43,8 +43,9 @@ import {
 
 import { useAuthStore } from "@/store/authStore"
 import { useAnnouncementStore } from "@/store/announcementStore"
-import { useLeaveStore, LeaveType } from "@/store/leaveStore"
-import { useExpenseStore, ExpenseCategory } from "@/store/expenseStore"
+import { LeaveType } from "@/store/leaveStore"
+import { ExpenseCategory } from "@/store/expenseStore"
+import { useMyLeaves, useCreateLeave, useMyExpenses, useCreateExpense } from "@/hooks/api/use-hr"
 import { Badge } from "@/components/ui/badge"
 
 const employeeKpis = [
@@ -87,8 +88,13 @@ const employeeKpis = [
 export default function EmployeePortalPage() {
     const { user } = useAuthStore()
     const { announcements } = useAnnouncementStore()
-    const { leaveRequests, addLeaveRequest } = useLeaveStore()
-    const { expenses, addExpense } = useExpenseStore()
+
+    // API Hooks
+    const { data: myLeaves = [], isLoading: isLoadingLeaves } = useMyLeaves()
+    const { mutate: addLeaveRequest, isPending: isAddingLeave } = useCreateLeave()
+    const { data: myExpenses = [], isLoading: isLoadingExpenses } = useMyExpenses()
+    const { mutate: addExpense, isPending: isAddingExpense } = useCreateExpense()
+
     const [isLeaveDialogOpen, setIsLeaveDialogOpen] = useState(false)
     const [isExpenseDialogOpen, setIsExpenseDialogOpen] = useState(false)
 
@@ -108,8 +114,6 @@ export default function EmployeePortalPage() {
     })
 
     // Filters
-    const myLeaves = leaveRequests.filter(l => l.employeeId === (user?.id || "EMP-001"))
-    const myExpenses = expenses.filter(e => e.employeeId === (user?.id || "EMP-001"))
     const activeAnnouncements = announcements.filter(a => a.isActive)
 
     const handleLeaveSubmit = () => {
@@ -118,28 +122,18 @@ export default function EmployeePortalPage() {
             return;
         }
 
-        // Gün hesaplama (basit)
-        const start = new Date(leaveFormData.startDate)
-        const end = new Date(leaveFormData.endDate)
-        const diffTime = Math.abs(end.getTime() - start.getTime())
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1
-
         addLeaveRequest({
-            employeeId: user?.id || "EMP-001",
-            employeeName: user?.name || "Bilinmeyen Personel",
+            userId: user?.id,
             type: leaveFormData.type,
             startDate: leaveFormData.startDate,
             endDate: leaveFormData.endDate,
-            days: diffDays,
             reason: leaveFormData.reason
+        }, {
+            onSuccess: () => {
+                setIsLeaveDialogOpen(false)
+                setLeaveFormData({ type: "Yıllık İzin", startDate: "", endDate: "", reason: "" })
+            }
         })
-
-        toast.success("İzin talebiniz iletildi.", {
-            description: `${diffDays} günlük ${leaveFormData.type} talebiniz İK onayına sunuldu.`
-        })
-
-        setIsLeaveDialogOpen(false)
-        setLeaveFormData({ type: "Yıllık İzin", startDate: "", endDate: "", reason: "" })
     }
 
     const handleExpenseSubmit = () => {
@@ -149,21 +143,17 @@ export default function EmployeePortalPage() {
         }
 
         addExpense({
-            employeeId: user?.id || "EMP-001",
-            employeeName: user?.name || "Bilinmeyen Personel",
+            userId: user?.id,
             category: expenseFormData.category,
             amount: parseFloat(expenseFormData.amount),
-            currency: "TRY",
             description: expenseFormData.description,
             date: expenseFormData.date
+        }, {
+            onSuccess: () => {
+                setIsExpenseDialogOpen(false)
+                setExpenseFormData({ category: "Yemek", amount: "", description: "", date: new Date().toISOString().split('T')[0] })
+            }
         })
-
-        toast.success("Masraf talebiniz iletildi.", {
-            description: "Finans departmanı onayına sunuldu."
-        })
-
-        setIsExpenseDialogOpen(false)
-        setExpenseFormData({ category: "Yemek", amount: "", description: "", date: new Date().toISOString().split('T')[0] })
     }
 
     return (
@@ -197,10 +187,9 @@ export default function EmployeePortalPage() {
             <div className="grid gap-6 md:grid-cols-3">
                 <div className="md:col-span-2 space-y-6">
                     <Tabs defaultValue="leave" className="w-full">
-                        <TabsList className="grid w-full grid-cols-3 max-w-[550px] h-10 bg-muted/50 border border-sidebar-border/30">
+                        <TabsList className="grid w-full grid-cols-2 max-w-[400px] h-10 bg-muted/50 border border-sidebar-border/30">
                             <TabsTrigger value="leave">İzin Talepleri</TabsTrigger>
                             <TabsTrigger value="expense">Masraf Talepleri</TabsTrigger>
-                            <TabsTrigger value="payroll">Bordrolarım</TabsTrigger>
                         </TabsList>
 
                         <TabsContent value="leave" className="mt-6">
@@ -276,13 +265,15 @@ export default function EmployeePortalPage() {
                                             </div>
                                             <DialogFooter>
                                                 <Button variant="outline" onClick={() => setIsLeaveDialogOpen(false)}>İptal</Button>
-                                                <Button onClick={handleLeaveSubmit} className="bg-primary shadow-lg shadow-primary/20">Talebi Gönder</Button>
+                                                <Button onClick={handleLeaveSubmit} disabled={isAddingLeave} className="bg-primary shadow-lg shadow-primary/20">{isAddingLeave ? "Gönderiliyor..." : "Talebi Gönder"}</Button>
                                             </DialogFooter>
                                         </DialogContent>
                                     </Dialog>
                                 </CardHeader>
                                 <CardContent>
-                                    {myLeaves.length === 0 ? (
+                                    {isLoadingLeaves ? (
+                                        <div className="flex justify-center items-center py-12">Yükleniyor...</div>
+                                    ) : myLeaves.length === 0 ? (
                                         <div className="flex flex-col items-center justify-center py-12 text-center">
                                             <div className="h-16 w-16 bg-primary/10 rounded-full flex items-center justify-center mb-4">
                                                 <CalendarDays className="h-8 w-8 text-primary" />
@@ -292,29 +283,39 @@ export default function EmployeePortalPage() {
                                         </div>
                                     ) : (
                                         <div className="space-y-4">
-                                            {myLeaves.map((leave) => (
-                                                <div key={leave.id} className="flex items-center justify-between p-4 rounded-xl border bg-background/50 backdrop-blur-sm">
-                                                    <div className="flex items-center gap-4">
-                                                        <div className={`p-2 rounded-lg ${leave.status === 'approved' ? 'bg-emerald-500/10 text-emerald-500' :
-                                                            leave.status === 'rejected' ? 'bg-red-500/10 text-red-500' :
-                                                                'bg-amber-500/10 text-amber-500'
-                                                            }`}>
-                                                            <CalendarDays className="h-5 w-5" />
+                                            {myLeaves.map((leave: any) => {
+                                                const start = new Date(leave.startDate)
+                                                const end = new Date(leave.endDate)
+                                                const diffTime = Math.abs(end.getTime() - start.getTime())
+                                                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1
+                                                const formattedStart = start.toLocaleDateString("tr-TR")
+                                                const formattedEnd = end.toLocaleDateString("tr-TR")
+                                                const appliedAtStr = leave.createdAt ? new Date(leave.createdAt).toLocaleDateString("tr-TR") : "Belirtilmemiş"
+
+                                                return (
+                                                    <div key={leave.id} className="flex items-center justify-between p-4 rounded-xl border bg-background/50 backdrop-blur-sm">
+                                                        <div className="flex items-center gap-4">
+                                                            <div className={`p-2 rounded-lg ${leave.status === 'Onaylandı' ? 'bg-emerald-500/10 text-emerald-500' :
+                                                                leave.status === 'Reddedildi' ? 'bg-red-500/10 text-red-500' :
+                                                                    'bg-amber-500/10 text-amber-500'
+                                                                }`}>
+                                                                <CalendarDays className="h-5 w-5" />
+                                                            </div>
+                                                            <div>
+                                                                <p className="font-semibold text-sm">{leave.type} ({diffDays} Gün)</p>
+                                                                <p className="text-xs text-muted-foreground italic truncate max-w-[200px]">{leave.reason || 'Açıklama yok'}</p>
+                                                                <p className="text-[10px] text-muted-foreground mt-1">{formattedStart} - {formattedEnd}</p>
+                                                            </div>
                                                         </div>
-                                                        <div>
-                                                            <p className="font-semibold text-sm">{leave.type} ({leave.days} Gün)</p>
-                                                            <p className="text-xs text-muted-foreground italic truncate max-w-[200px]">{leave.reason || 'Açıklama yok'}</p>
-                                                            <p className="text-[10px] text-muted-foreground mt-1">{leave.startDate} - {leave.endDate}</p>
+                                                        <div className="flex flex-col items-end gap-2">
+                                                            {leave.status === 'Bekliyor' && <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/20 text-[10px]">Beklemede</Badge>}
+                                                            {leave.status === 'Onaylandı' && <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 text-[10px]">Onaylandı</Badge>}
+                                                            {leave.status === 'Reddedildi' && <Badge variant="outline" className="bg-red-500/10 text-red-600 border-red-500/20 text-[10px]">Reddedildi</Badge>}
+                                                            <span className="text-[9px] text-muted-foreground">{appliedAtStr}</span>
                                                         </div>
                                                     </div>
-                                                    <div className="flex flex-col items-end gap-2">
-                                                        {leave.status === 'waiting' && <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/20 text-[10px]">Beklemede</Badge>}
-                                                        {leave.status === 'approved' && <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 text-[10px]">Onaylandı</Badge>}
-                                                        {leave.status === 'rejected' && <Badge variant="outline" className="bg-red-500/10 text-red-600 border-red-500/20 text-[10px]">Reddedildi</Badge>}
-                                                        <span className="text-[9px] text-muted-foreground">{leave.appliedAt}</span>
-                                                    </div>
-                                                </div>
-                                            ))}
+                                                )
+                                            })}
                                         </div>
                                     )}
                                 </CardContent>
@@ -394,13 +395,15 @@ export default function EmployeePortalPage() {
                                             </div>
                                             <DialogFooter>
                                                 <Button variant="outline" onClick={() => setIsExpenseDialogOpen(false)}>İptal</Button>
-                                                <Button onClick={handleExpenseSubmit} className="bg-emerald-600 hover:bg-emerald-700">Talebi Gönder</Button>
+                                                <Button onClick={handleExpenseSubmit} disabled={isAddingExpense} className="bg-emerald-600 hover:bg-emerald-700">{isAddingExpense ? "Gönderiliyor..." : "Talebi Gönder"}</Button>
                                             </DialogFooter>
                                         </DialogContent>
                                     </Dialog>
                                 </CardHeader>
                                 <CardContent>
-                                    {myExpenses.length === 0 ? (
+                                    {isLoadingExpenses ? (
+                                        <div className="flex justify-center items-center py-12">Yükleniyor...</div>
+                                    ) : myExpenses.length === 0 ? (
                                         <div className="flex flex-col items-center justify-center py-12 text-center h-[300px]">
                                             <div className="h-16 w-16 bg-emerald-500/10 rounded-full flex items-center justify-center mb-4">
                                                 <Receipt className="h-8 w-8 text-emerald-500" />
@@ -410,60 +413,36 @@ export default function EmployeePortalPage() {
                                         </div>
                                     ) : (
                                         <div className="space-y-3">
-                                            {myExpenses.map((exp) => (
-                                                <div key={exp.id} className="flex items-center justify-between p-4 rounded-xl border bg-background/50">
-                                                    <div className="flex items-center gap-4">
-                                                        <div className="p-2 bg-emerald-500/10 text-emerald-600 rounded-lg">
-                                                            <Receipt className="h-5 w-5" />
+                                            {myExpenses.map((exp: any) => {
+                                                const formattedDate = exp.date ? new Date(exp.date).toLocaleDateString("tr-TR") : "Belirtilmemiş"
+
+                                                return (
+                                                    <div key={exp.id} className="flex items-center justify-between p-4 rounded-xl border bg-background/50">
+                                                        <div className="flex items-center gap-4">
+                                                            <div className="p-2 bg-emerald-500/10 text-emerald-600 rounded-lg">
+                                                                <Receipt className="h-5 w-5" />
+                                                            </div>
+                                                            <div>
+                                                                <p className="font-semibold text-sm">{exp.category} - ₺{(exp.amount || 0).toLocaleString()}</p>
+                                                                <p className="text-xs text-muted-foreground truncate max-w-[200px]">{exp.description}</p>
+                                                                <span className="text-[10px] text-muted-foreground">{formattedDate}</span>
+                                                            </div>
                                                         </div>
-                                                        <div>
-                                                            <p className="font-semibold text-sm">{exp.category} - ₺{exp.amount.toLocaleString()}</p>
-                                                            <p className="text-xs text-muted-foreground truncate max-w-[200px]">{exp.description}</p>
-                                                            <span className="text-[10px] text-muted-foreground">{exp.date}</span>
+                                                        <div className="flex flex-col items-end gap-1.5">
+                                                            {exp.status === 'Bekliyor' && <Badge className="bg-amber-500/10 text-amber-600 border-amber-500/20 text-[10px]">Beklemede</Badge>}
+                                                            {exp.status === 'Onaylandı' && <Badge className="bg-blue-500/10 text-blue-600 border-blue-500/20 text-[10px]">Onaylandı</Badge>}
+                                                            {exp.status === 'Ödendi' && <Badge className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 text-[10px]">Ödendi</Badge>}
+                                                            {exp.status === 'Reddedildi' && <Badge className="bg-red-500/10 text-red-600 border-red-500/20 text-[10px]">Reddedildi</Badge>}
                                                         </div>
                                                     </div>
-                                                    <div className="flex flex-col items-end gap-1.5">
-                                                        {exp.status === 'waiting' && <Badge className="bg-amber-500/10 text-amber-600 border-amber-500/20 text-[10px]">Beklemede</Badge>}
-                                                        {exp.status === 'approved' && <Badge className="bg-blue-500/10 text-blue-600 border-blue-500/20 text-[10px]">Onaylandı</Badge>}
-                                                        {exp.status === 'paid' && <Badge className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 text-[10px]">Ödendi</Badge>}
-                                                        {exp.status === 'rejected' && <Badge className="bg-red-500/10 text-red-600 border-red-500/20 text-[10px]">Reddedildi</Badge>}
-                                                    </div>
-                                                </div>
-                                            ))}
+                                                )
+                                            })}
                                         </div>
                                     )}
                                 </CardContent>
                             </Card>
                         </TabsContent>
 
-                        <TabsContent value="payroll" className="mt-6">
-                            <Card className="bg-background/50 backdrop-blur-xl border-sidebar-border/50">
-                                <CardHeader>
-                                    <CardTitle>Geçmiş Bordrolar</CardTitle>
-                                    <CardDescription>Son 6 aya ait dijital maaş bordrolarınız.</CardDescription>
-                                </CardHeader>
-                                <CardContent>
-                                    <div className="space-y-4">
-                                        {['Şubat 2026', 'Ocak 2026', 'Aralık 2025'].map((month, i) => (
-                                            <div key={i} className="flex items-center justify-between p-4 rounded-xl border bg-muted/30 hover:bg-muted/60 transition-colors">
-                                                <div className="flex items-center gap-4">
-                                                    <div className="p-2 bg-primary/10 text-primary rounded-lg">
-                                                        <Banknote className="h-5 w-5" />
-                                                    </div>
-                                                    <div>
-                                                        <p className="font-semibold text-sm">{month} Maaş Bordrosu</p>
-                                                        <p className="text-xs text-muted-foreground">Düzenlenme: {month.split(' ')[0]} Sonu</p>
-                                                    </div>
-                                                </div>
-                                                <Button variant="ghost" size="icon" className="h-8 w-8">
-                                                    <Download className="h-4 w-4" />
-                                                </Button>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </CardContent>
-                            </Card>
-                        </TabsContent>
                     </Tabs>
                 </div>
 

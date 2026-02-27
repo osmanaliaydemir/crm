@@ -1,0 +1,16 @@
+/Users/osmanaliaydemir/Documents/CRM/backend/src/CRM.Application/obj/Debug/net10.0/CRM.Application.csproj.AssemblyReference.cache
+/Users/osmanaliaydemir/Documents/CRM/backend/src/CRM.Application/obj/Debug/net10.0/CRM.Application.GeneratedMSBuildEditorConfig.editorconfig
+/Users/osmanaliaydemir/Documents/CRM/backend/src/CRM.Application/obj/Debug/net10.0/CRM.Application.AssemblyInfoInputs.cache
+/Users/osmanaliaydemir/Documents/CRM/backend/src/CRM.Application/obj/Debug/net10.0/CRM.Application.AssemblyInfo.cs
+/Users/osmanaliaydemir/Documents/CRM/backend/src/CRM.Application/obj/Debug/net10.0/CRM.Application.csproj.CoreCompileInputs.cache
+/Users/osmanaliaydemir/Documents/CRM/backend/src/CRM.Application/obj/Debug/net10.0/CRM.Application.sourcelink.json
+/Users/osmanaliaydemir/Documents/CRM/backend/src/CRM.Application/bin/Debug/net10.0/CRM.Application.deps.json
+/Users/osmanaliaydemir/Documents/CRM/backend/src/CRM.Application/bin/Debug/net10.0/CRM.Application.dll
+/Users/osmanaliaydemir/Documents/CRM/backend/src/CRM.Application/bin/Debug/net10.0/CRM.Application.pdb
+/Users/osmanaliaydemir/Documents/CRM/backend/src/CRM.Application/bin/Debug/net10.0/CRM.Domain.dll
+/Users/osmanaliaydemir/Documents/CRM/backend/src/CRM.Application/bin/Debug/net10.0/CRM.Domain.pdb
+/Users/osmanaliaydemir/Documents/CRM/backend/src/CRM.Application/obj/Debug/net10.0/CRM.Appl.F64C2975.Up2Date
+/Users/osmanaliaydemir/Documents/CRM/backend/src/CRM.Application/obj/Debug/net10.0/CRM.Application.dll
+/Users/osmanaliaydemir/Documents/CRM/backend/src/CRM.Application/obj/Debug/net10.0/refint/CRM.Application.dll
+/Users/osmanaliaydemir/Documents/CRM/backend/src/CRM.Application/obj/Debug/net10.0/CRM.Application.pdb
+/Users/osmanaliaydemir/Documents/CRM/backend/src/CRM.Application/obj/Debug/net10.0/ref/CRM.Application.dll

@@ -18,6 +18,7 @@ import {
     Pencil,
     Trash2
 } from "lucide-react"
+import { useProducts, useCreateProduct, useUpdateProduct, useDeleteProduct } from "@/hooks/api/use-inventory"
 
 import { Button } from "@/components/ui/button"
 import { PageWrapper } from "@/components/page-wrapper"
@@ -173,16 +174,14 @@ const initialProducts: ProductType[] = [
 ]
 
 export default function InventoryPage() {
-    const [products, setProducts] = useState<ProductType[]>(initialProducts)
+    const { data: products = [], isLoading } = useProducts()
+    const { mutate: createProduct } = useCreateProduct()
+    const { mutate: updateProduct } = useUpdateProduct()
+    const { mutate: deleteProduct } = useDeleteProduct()
+
     const [searchTerm, setSearchTerm] = useState("")
     const [selectedCategory, setSelectedCategory] = useState("all")
     const [selectedStatus, setSelectedStatus] = useState("all")
-    const [isLoading, setIsLoading] = useState(true)
-
-    useEffect(() => {
-        const timer = setTimeout(() => setIsLoading(false), 1500)
-        return () => clearTimeout(timer)
-    }, [])
 
     const [isDialogOpen, setIsDialogOpen] = useState(false)
     const [editingProduct, setEditingProduct] = useState<ProductType | null>(null)
@@ -204,7 +203,7 @@ export default function InventoryPage() {
     })
 
     const filteredProducts = products.filter(
-        (product) => {
+        (product: any) => {
             const matchesSearch = product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                 product.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
                 product.category.toLowerCase().includes(searchTerm.toLowerCase())
@@ -216,7 +215,7 @@ export default function InventoryPage() {
         }
     )
 
-    const categories = Array.from(new Set(products.map(p => p.category))).map(cat => ({ label: cat, value: cat }))
+    const categories: { label: string; value: string }[] = Array.from(new Set(products.map((p: any) => String(p.category)))).map(cat => ({ label: String(cat), value: String(cat) }))
     const statuses = [
         { label: "Aktif", value: "active" },
         { label: "Stokta Yok", value: "out_of_stock" },
@@ -224,14 +223,13 @@ export default function InventoryPage() {
     ]
 
     const handleExport = () => {
-        const exportData = filteredProducts.map(p => ({
+        const exportData = filteredProducts.map((p: any) => ({
             'ID': p.id,
             'Ürün Adı': p.name,
             'SKU': p.sku,
             'Kategori': p.category,
-            'Tip': p.type,
             'Fiyat': p.price,
-            'Stok': p.stock !== null ? p.stock : 'N/A',
+            'Stok': p.stockQuantity ?? 'N/A',
             'Durum': p.status
         }))
         exportToCSV(exportData, "Envanter_Listesi")
@@ -266,49 +264,51 @@ export default function InventoryPage() {
         setIsDialogOpen(true)
     }
 
-    const openEditDialog = (product: ProductType) => {
+    const openEditDialog = (product: any) => {
         setEditingProduct(product)
         form.reset({
             id: product.id,
             name: product.name,
             sku: product.sku,
             category: product.category,
-            type: product.type,
+            type: "Fiziksel", // Backend'de type yok, şimdilik UI'da Fiziksel olarak gösterelim
             price: product.price,
-            stock: product.stock,
+            stock: product.stockQuantity,
             status: product.status,
-            variants: product.variants.join(", ")
+            variants: "" // Backend'de variants yok
         })
         setIsDialogOpen(true)
     }
 
     const onSubmit = (data: ProductFormValues) => {
-        const variantsArray = data.variants ? data.variants.split(",").map(v => v.trim()).filter(v => v !== "") : []
-
-        let targetStock = data.type === "Hizmet" ? null : (data.stock ?? null)
+        let targetStock = data.type === "Hizmet" ? 0 : (data.stock ?? 0)
         let targetStatus = data.status
         if (targetStock === 0 && data.type === "Fiziksel") targetStatus = "Tükendi"
-        else if (targetStock !== null && targetStock > 0 && targetStock < 10 && data.type === "Fiziksel") targetStatus = "Kritik Stok"
+        else if (targetStock > 0 && targetStock < 10 && data.type === "Fiziksel" && targetStatus !== "Pasif") targetStatus = "Kritik Stok"
+
+        const dto = {
+            name: data.name,
+            sku: data.sku,
+            category: data.category,
+            price: data.price,
+            stockQuantity: targetStock,
+            minimumStockLevel: 10, // Default minimum stock level
+            status: targetStatus
+        }
 
         if (editingProduct?.id) {
-            setProducts(products.map(p => p.id === editingProduct.id ? { ...p, ...data, id: editingProduct.id, variants: variantsArray, stock: targetStock, status: targetStatus, name: data.name, type: data.type } : p))
-            toast.success("Katalog öğesi başarıyla güncellendi.")
+            updateProduct({ id: editingProduct.id, data: dto }, {
+                onSuccess: () => {
+                    setIsDialogOpen(false)
+                }
+            })
         } else {
-            const newProduct: ProductType = {
-                id: `PRD-${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`,
-                name: data.name,
-                sku: data.sku,
-                category: data.category,
-                type: data.type,
-                price: data.price,
-                stock: targetStock,
-                status: targetStatus,
-                variants: variantsArray
-            }
-            setProducts([newProduct, ...products])
-            toast.success("Kataloğa yeni öğe eklendi.")
+            createProduct(dto, {
+                onSuccess: () => {
+                    setIsDialogOpen(false)
+                }
+            })
         }
-        setIsDialogOpen(false)
     }
 
     const handleDeleteClick = (id: string) => {
@@ -318,10 +318,12 @@ export default function InventoryPage() {
 
     const confirmDelete = () => {
         if (productToDelete) {
-            setProducts(products.filter(p => p.id !== productToDelete))
-            toast.success("Katalog öğesi silindi.")
-            setIsDeleteDialogOpen(false)
-            setProductToDelete(null)
+            deleteProduct(productToDelete, {
+                onSuccess: () => {
+                    setIsDeleteDialogOpen(false)
+                    setProductToDelete(null)
+                }
+            })
         }
     }
 
@@ -548,15 +550,15 @@ export default function InventoryPage() {
                             </TableHeader>
                             <TableBody>
                                 {filteredProducts.length > 0 ? (
-                                    filteredProducts.map((product) => (
+                                    filteredProducts.map((product: any) => (
                                         <TableRow key={product.id} className="group hover:bg-muted/30 transition-colors">
                                             <TableCell>
                                                 <div className="flex items-center gap-3">
                                                     <div className="h-9 w-9 rounded-full bg-primary/10 flex items-center justify-center group-hover:bg-primary transition-colors shrink-0">
-                                                        {product.type === "Fiziksel" ? (
-                                                            <Package className="h-4 w-4 text-orange-500 group-hover:text-white transition-colors" />
-                                                        ) : (
+                                                        {product.stockQuantity === 0 && product.price > 10000 ? (
                                                             <Layers className="h-4 w-4 text-blue-500 group-hover:text-white transition-colors" />
+                                                        ) : (
+                                                            <Package className="h-4 w-4 text-orange-500 group-hover:text-white transition-colors" />
                                                         )}
                                                     </div>
                                                     <span className="font-mono text-xs text-muted-foreground group-hover:text-foreground/80 transition-colors uppercase">{product.sku}</span>
@@ -565,14 +567,6 @@ export default function InventoryPage() {
                                             <TableCell>
                                                 <div className="flex flex-col">
                                                     <span className="font-medium text-sm">{product.name}</span>
-                                                    {product.variants.length > 0 && (
-                                                        <div className="flex items-center gap-1 mt-1 opacity-70 group-hover:opacity-100 transition-opacity">
-                                                            <Tags className="h-3 w-3 text-muted-foreground" />
-                                                            <span className="text-[10px] text-muted-foreground truncate w-40">
-                                                                Varyantlar: {product.variants.join(", ")}
-                                                            </span>
-                                                        </div>
-                                                    )}
                                                 </div>
                                             </TableCell>
                                             <TableCell className="text-sm text-muted-foreground group-hover:text-foreground/80 transition-colors">
@@ -582,13 +576,9 @@ export default function InventoryPage() {
                                                 ₺{product.price.toLocaleString('tr-TR')}
                                             </TableCell>
                                             <TableCell>
-                                                {product.type === "Hizmet" ? (
-                                                    <span className="text-xs text-muted-foreground italic">-</span>
-                                                ) : (
-                                                    <span className={`font-medium ${product.stock === 0 ? "text-destructive" : (product.stock && product.stock < 10 ? "text-orange-500" : "text-emerald-600 dark:text-emerald-400")}`}>
-                                                        {product.stock} Adet
-                                                    </span>
-                                                )}
+                                                <span className={`font-medium ${product.stockQuantity === 0 ? "text-destructive" : (product.stockQuantity && product.stockQuantity < 10 ? "text-orange-500" : "text-emerald-600 dark:text-emerald-400")}`}>
+                                                    {product.stockQuantity} Adet
+                                                </span>
                                             </TableCell>
                                             <TableCell>
                                                 {getStatusBadge(product.status)}
@@ -606,11 +596,6 @@ export default function InventoryPage() {
                                                         <DropdownMenuItem onClick={() => openEditDialog(product)}>
                                                             <Pencil className="h-4 w-4 mr-2" /> Görüntüle / Düzenle
                                                         </DropdownMenuItem>
-                                                        {product.type === "Fiziksel" && (
-                                                            <DropdownMenuItem>
-                                                                <Plus className="h-4 w-4 mr-2" /> Stok Girişi Yap
-                                                            </DropdownMenuItem>
-                                                        )}
                                                         <DropdownMenuSeparator />
                                                         <DropdownMenuItem onClick={() => handleDeleteClick(product.id as string)} className="text-destructive focus:bg-destructive/10">
                                                             <Trash2 className="h-4 w-4 mr-2" /> Kataloğdan Kaldır

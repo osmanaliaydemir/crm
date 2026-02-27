@@ -84,6 +84,8 @@ import { useForm, useFieldArray } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { toast } from "sonner"
 import { PageWrapper } from "@/components/page-wrapper"
+import { TableSkeleton } from "@/components/skeletons"
+import { useOrders, useCreateOrder, useUpdateOrderStatus } from "@/hooks/api/use-orders"
 
 // Zod Schema
 const orderItemSchema = z.object({
@@ -118,68 +120,11 @@ export type OrderType = {
     items: OrderItemType[];
 }
 
-// Mock Sipariş Verisi
-const initialOrders: OrderType[] = [
-    {
-        id: "ORD-2023-1045",
-        customer: "TechCorp Bilişim A.Ş.",
-        customerType: "B2B",
-        date: "24 Eki 2023",
-        total: 165000,
-        status: "Tamamlandı",
-        items: [
-            { name: "Universal CRM Lisansı (Yıllık)", qty: 1, price: 150000 },
-            { name: "Kurulum ve Eğitim Hizmeti", qty: 1, price: 15000 }
-        ]
-    },
-    {
-        id: "ORD-2023-1046",
-        customer: "Mehmet Yılmaz",
-        customerType: "B2C",
-        date: "25 Eki 2023",
-        total: 3500,
-        status: "Hazırlanıyor",
-        items: [
-            { name: "Ergonomik Ofis Koltuğu", qty: 1, price: 3500 }
-        ]
-    },
-    {
-        id: "ORD-2023-1047",
-        customer: "Global Lojistik Ltd.",
-        customerType: "B2B",
-        date: "25 Eki 2023",
-        total: 270000,
-        status: "Kargoda",
-        items: [
-            { name: "Cisco Catalyst 9300 Switch", qty: 6, price: 45000 }
-        ]
-    },
-    {
-        id: "ORD-2023-1048",
-        customer: "Can Tekstil",
-        customerType: "B2B",
-        date: "26 Eki 2023",
-        total: 16000,
-        status: "Yeni Sipariş",
-        items: [
-            { name: "Siber Güvenlik Danışmanlığı (Adam/Gün)", qty: 2, price: 8000 }
-        ]
-    },
-    {
-        id: "ORD-2023-1049",
-        customer: "Ayşe Kaya",
-        customerType: "B2C",
-        date: "26 Eki 2023",
-        total: 65000,
-        status: "İptal Edildi",
-        items: [
-            { name: "Lenovo ThinkPad X1 Carbon", qty: 1, price: 65000 }
-        ]
-    },
-]
-
 export default function OrdersPage() {
-    const [orders, setOrders] = useState<OrderType[]>(initialOrders)
+    const { data: orders = [], isLoading } = useOrders()
+    const { mutate: createOrder } = useCreateOrder()
+    const { mutate: updateOrderStatusApi } = useUpdateOrderStatus()
+
     const [searchTerm, setSearchTerm] = useState("")
     const [activeTab, setActiveTab] = useState("all")
 
@@ -203,49 +148,54 @@ export default function OrdersPage() {
     })
 
     const onSubmit = (data: OrderFormValues) => {
-        const total = data.items.reduce((acc, item) => acc + (item.qty * item.price), 0)
-
-        const newOrder: OrderType = {
-            id: `ORD-2023-${Math.floor(Math.random() * 9000 + 1000)}`,
-            customer: data.customer,
+        const dto = {
+            customerId: null,
+            customerName: data.customer,
             customerType: data.customerType,
-            date: new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' }),
-            total,
             status: data.status,
-            items: data.items,
+            orderDate: new Date().toISOString(),
+            items: data.items.map(item => ({
+                productName: item.name,
+                productId: null,
+                quantity: item.qty,
+                unitPrice: item.price
+            }))
         }
 
-        setOrders([newOrder, ...orders])
-        toast.success("Yeni sipariş başarıyla oluşturuldu.")
-        setIsSheetOpen(false)
-        form.reset()
+        createOrder(dto, {
+            onSuccess: () => {
+                setIsSheetOpen(false)
+                form.reset()
+            }
+        })
     }
 
     const deleteOrder = () => {
         if (orderToDelete) {
-            setOrders(orders.filter(o => o.id !== orderToDelete))
-            toast.success("Sipariş başarıyla iptal edildi ve silindi.")
+            toast.info("Backend API'da sipariş silme bulunmuyor. Şimdilik listeden düşürülmez, iptal statüsüne çekebilirsiniz.")
             setIsDeleteDialogOpen(false)
             setOrderToDelete(null)
         }
     }
 
     const updateOrderStatus = (orderId: string, newStatus: string) => {
-        setOrders(orders.map(o => o.id === orderId ? { ...o, status: newStatus } : o))
-        toast.success(`Sipariş durumu "${newStatus}" olarak güncellendi.`)
+        updateOrderStatusApi({ id: orderId, status: newStatus })
     }
 
     // Basit Filtreleme Logic'i
-    const filteredOrders = orders.filter((order) => {
+    const filteredOrders = orders.filter((order: any) => {
+        const idSearch = order.id ? order.id.toLowerCase() : ""
+        const custSearch = order.customerName ? order.customerName.toLowerCase() : ""
+
         const matchesSearch =
-            order.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            order.customer.toLowerCase().includes(searchTerm.toLowerCase())
+            idSearch.includes(searchTerm.toLowerCase()) ||
+            custSearch.includes(searchTerm.toLowerCase())
 
-        if (activeTab === "all") return matchesSearch
-        if (activeTab === "active") return matchesSearch && ["Yeni Sipariş", "Hazırlanıyor", "Kargoda"].includes(order.status)
-        if (activeTab === "completed") return matchesSearch && order.status === "Tamamlandı"
+        let matchesTab = true;
+        if (activeTab === "active") matchesTab = ["Yeni Sipariş", "Hazırlanıyor", "Kargoda"].includes(order.status)
+        if (activeTab === "completed") matchesTab = order.status === "Tamamlandı"
 
-        return matchesSearch
+        return matchesSearch && matchesTab
     })
 
     const getStatusConfig = (status: string) => {
@@ -453,15 +403,22 @@ export default function OrdersPage() {
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {filteredOrders.length > 0 ? (
-                                    filteredOrders.map((order) => {
+                                {isLoading ? (
+                                    <TableRow>
+                                        <TableCell colSpan={6} className="h-48 text-center text-muted-foreground p-0">
+                                            <TableSkeleton />
+                                        </TableCell>
+                                    </TableRow>
+                                ) : filteredOrders.length > 0 ? (
+                                    filteredOrders.map((order: any) => {
                                         const statusConfig = getStatusConfig(order.status)
                                         const StatusIcon = statusConfig.icon
+                                        const orderDateStr = order.orderDate ? new Date(order.orderDate).toLocaleDateString("tr-TR") : "Belirtilmemiş"
 
                                         return (
                                             <TableRow key={order.id} className="group hover:bg-muted/30 transition-colors">
                                                 <TableCell className="font-medium text-xs font-mono group-hover:text-primary transition-colors">
-                                                    {order.id}
+                                                    {order.id?.substring(0, 8) || "N/A"}
                                                 </TableCell>
                                                 <TableCell>
                                                     <div className="flex items-center gap-3">
@@ -471,17 +428,17 @@ export default function OrdersPage() {
                                                                 <User className="h-4 w-4 text-primary group-hover:text-white transition-colors" />
                                                             }
                                                         </div>
-                                                        <span className="font-medium text-sm group-hover:text-foreground/80 transition-colors">{order.customer}</span>
+                                                        <span className="font-medium text-sm group-hover:text-foreground/80 transition-colors">{order.customerName}</span>
                                                     </div>
                                                 </TableCell>
                                                 <TableCell className="text-sm text-muted-foreground group-hover:text-foreground/80 transition-colors">
                                                     <div className="flex items-center gap-1.5">
                                                         <Calendar className="h-3.5 w-3.5" />
-                                                        {order.date}
+                                                        {orderDateStr}
                                                     </div>
                                                 </TableCell>
                                                 <TableCell className="text-right font-medium text-primary/90 group-hover:text-primary transition-colors">
-                                                    ₺{order.total.toLocaleString('tr-TR')}
+                                                    ₺{(order.totalAmount || 0).toLocaleString('tr-TR')}
                                                 </TableCell>
                                                 <TableCell>
                                                     <Badge
@@ -519,15 +476,15 @@ export default function OrdersPage() {
                                                                     <div className="grid grid-cols-2 gap-4 text-sm">
                                                                         <div className="flex flex-col gap-1">
                                                                             <span className="text-muted-foreground">Oluşturulma</span>
-                                                                            <span className="font-medium">{order.date}</span>
+                                                                            <span className="font-medium">{orderDateStr}</span>
                                                                         </div>
                                                                         <div className="flex flex-col gap-1">
                                                                             <span className="text-muted-foreground">Teslimat Tipi</span>
-                                                                            <span className="font-medium">Adrese Teslim / Kurulum</span>
+                                                                            <span className="font-medium">Standart Kargo / Adrese Teslim</span>
                                                                         </div>
                                                                         <div className="flex flex-col gap-1 col-span-2">
                                                                             <span className="text-muted-foreground">Firma / İlgili Kişi</span>
-                                                                            <span className="font-medium">{order.customer}</span>
+                                                                            <span className="font-medium">{order.customerName}</span>
                                                                         </div>
                                                                     </div>
                                                                 </div>
@@ -545,11 +502,11 @@ export default function OrdersPage() {
                                                                                 </TableRow>
                                                                             </TableHeader>
                                                                             <TableBody>
-                                                                                {order.items.map((item, i) => (
+                                                                                {order.items?.map((item: any, i: number) => (
                                                                                     <TableRow key={i}>
-                                                                                        <TableCell className="text-sm font-medium">{item.name}</TableCell>
-                                                                                        <TableCell className="text-sm text-right">{item.qty}</TableCell>
-                                                                                        <TableCell className="text-sm text-right">₺{item.price.toLocaleString('tr-TR')}</TableCell>
+                                                                                        <TableCell className="text-sm font-medium">{item.productName}</TableCell>
+                                                                                        <TableCell className="text-sm text-right">{item.quantity}</TableCell>
+                                                                                        <TableCell className="text-sm text-right">₺{(item.unitPrice || 0).toLocaleString('tr-TR')}</TableCell>
                                                                                     </TableRow>
                                                                                 ))}
                                                                             </TableBody>
@@ -562,15 +519,15 @@ export default function OrdersPage() {
                                                                     <div className="w-1/2 space-y-2 text-sm">
                                                                         <div className="flex justify-between text-muted-foreground">
                                                                             <span>Ara Toplam</span>
-                                                                            <span>₺{(order.total * 0.8).toLocaleString('tr-TR', { maximumFractionDigits: 0 })}</span>
+                                                                            <span>₺{((order.totalAmount || 0) * 0.8).toLocaleString('tr-TR', { maximumFractionDigits: 0 })}</span>
                                                                         </div>
                                                                         <div className="flex justify-between text-muted-foreground">
                                                                             <span>KDV (%20)</span>
-                                                                            <span>₺{(order.total * 0.2).toLocaleString('tr-TR', { maximumFractionDigits: 0 })}</span>
+                                                                            <span>₺{((order.totalAmount || 0) * 0.2).toLocaleString('tr-TR', { maximumFractionDigits: 0 })}</span>
                                                                         </div>
                                                                         <div className="flex justify-between font-semibold text-lg pt-2 border-t">
                                                                             <span>Genel Toplam</span>
-                                                                            <span>₺{order.total.toLocaleString('tr-TR')}</span>
+                                                                            <span>₺{(order.totalAmount || 0).toLocaleString('tr-TR')}</span>
                                                                         </div>
                                                                     </div>
                                                                 </div>

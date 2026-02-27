@@ -15,27 +15,8 @@ export function useTransactions() {
     return useQuery({
         queryKey: financeKeys.lists(),
         queryFn: async () => {
-            // Mock Data. 
-            return [
-                {
-                    id: "TRX-101",
-                    date: "26 Eki 2023",
-                    description: "TechCorp A.Ş. Fatura Ödemesi",
-                    type: "in",
-                    category: "Tahsilat",
-                    amount: 150000,
-                    status: "Tamamlandı"
-                },
-                {
-                    id: "TRX-102",
-                    date: "25 Eki 2023",
-                    description: "Ekim Ayı Personel Maaşları",
-                    type: "out",
-                    category: "Gider",
-                    amount: 125000,
-                    status: "Tamamlandı"
-                },
-            ] as Transaction[]
+            const { data } = await api.get<Transaction[]>("/transactions")
+            return data
         }
     })
 }
@@ -46,17 +27,25 @@ export function useCreateTransaction() {
 
     return useMutation({
         mutationFn: async (newTx: TransactionFormValues) => {
-            return {
-                id: `TRX-${Math.floor(Math.random() * 900) + 100}`,
-                date: new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'short', year: 'numeric' }),
-                ...newTx,
-                status: newTx.status as TransactionStatus
-            } as Transaction
+            // Frontend'deki Form değerlerini Backend DTO'ya uyarlıyoruz
+            const payload = {
+                date: new Date().toISOString(),
+                description: newTx.description,
+                type: newTx.type,
+                category: newTx.category,
+                amount: newTx.amount,
+                status: newTx.status
+            };
+            const { data } = await api.post("/transactions", payload)
+            return data as Transaction
         },
-        onSuccess: (data) => {
-            const existing = queryClient.getQueryData<Transaction[]>(financeKeys.lists()) || []
-            queryClient.setQueryData(financeKeys.lists(), [data, ...existing])
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: financeKeys.lists() })
             toast.success("İşlem Başarıyla Eklendi")
+        },
+        onError: (err: any) => {
+            const message = err?.response?.data?.message || "İşlem eklenirken hata oluştu."
+            toast.error("İşlem Eklenemedi", { description: message })
         }
     })
 }
@@ -67,13 +56,11 @@ export function useUpdateTransactionStatus() {
 
     return useMutation({
         mutationFn: async ({ id, status }: { id: string, status: TransactionStatus }) => {
-            return { id, status }
+            const { data } = await api.patch(`/transactions/${id}/status`, { id, status })
+            return data
         },
-        onSuccess: (data) => {
-            queryClient.setQueryData<Transaction[]>(financeKeys.lists(), (old) => {
-                if (!old) return []
-                return old.map(t => t.id === data.id ? { ...t, status: data.status } : t)
-            })
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: financeKeys.lists() })
             toast.success("İşlem Durumu Güncellendi")
         }
     })
@@ -85,14 +72,32 @@ export function useDeleteTransaction() {
 
     return useMutation({
         mutationFn: async (id: string) => {
+            await api.delete(`/transactions/${id}`)
             return id
         },
-        onSuccess: (id) => {
-            queryClient.setQueryData<Transaction[]>(financeKeys.lists(), (old) => {
-                if (!old) return []
-                return old.filter(t => t.id !== id)
-            })
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: financeKeys.lists() })
             toast.success("İşlem Silindi")
+        },
+        onError: () => {
+            toast.error("Silme Başarısız. Yönetici Yetkisi Gerekebilir.")
+        }
+    })
+}
+
+// Fatura Oluşturma Hook'u
+export function useCreateInvoice() {
+    return useMutation({
+        mutationFn: async (invoiceData: any) => {
+            const { data } = await api.post("/invoices", invoiceData)
+            return data
+        },
+        onSuccess: () => {
+            toast.success("Fatura başarıyla oluşturuldu ve kaydedildi.")
+        },
+        onError: (err: any) => {
+            const message = err?.response?.data?.message || "Fatura oluşturulamadı."
+            toast.error("Kayıt Başarısız", { description: message })
         }
     })
 }

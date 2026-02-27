@@ -18,33 +18,8 @@ export function useCustomers() {
     return useQuery({
         queryKey: crmKeys.lists(),
         queryFn: async () => {
-            // Mock Data. Gerçekte: const { data } = await api.get<Customer[]>("/customers")
-            // return data;
-
-            return [
-                {
-                    id: "CUS-1001",
-                    name: "TechCorp Bilişim A.Ş.",
-                    type: "B2B",
-                    contactName: "Ahmet Yılmaz",
-                    email: "ahmet@techcorp.com",
-                    phone: "+90 555 123 4567",
-                    status: "Aktif",
-                    city: "İstanbul",
-                    healthScore: 85
-                },
-                {
-                    id: "CUS-1002",
-                    name: "Ayşe Demir",
-                    type: "B2C",
-                    contactName: "Ayşe Demir",
-                    email: "ayse.demir@gmail.com",
-                    phone: "+90 532 987 6543",
-                    status: "Aktif",
-                    city: "Ankara",
-                    healthScore: 45
-                }
-            ] as Customer[]
+            const { data } = await api.get<Customer[]>("/customers")
+            return data;
         }
     })
 }
@@ -55,23 +30,17 @@ export function useCreateCustomer() {
 
     return useMutation({
         mutationFn: async (newCustomer: CustomerFormValues) => {
-            // Gerçek API: const { data } = await api.post("/customers", newCustomer)
-            // return data
-
-            // Mock
-            return {
-                id: `CUS-${Math.floor(Math.random() * 9000) + 1000}`,
-                ...newCustomer
-            } as Customer
+            const { data } = await api.post("/customers", newCustomer)
+            return data as Customer
         },
         onSuccess: (data) => {
             // Önbellekteki listeyi güncelle
-            const existing = queryClient.getQueryData<Customer[]>(crmKeys.lists()) || []
-            queryClient.setQueryData(crmKeys.lists(), [data, ...existing])
-            toast.success("Müşteri Başarıyla Eklendi")
+            queryClient.invalidateQueries({ queryKey: crmKeys.lists() });
+            toast.success("Müşteri Başarıyla Eklendi", { description: `${data.name} sisteme kaydedildi.` })
         },
-        onError: () => {
-            toast.error("Müşteri Eklenemedi", { description: "Sunucu tarafında bir hata oluştu." })
+        onError: (err: any) => {
+            const message = err?.response?.data?.message || "Sunucu tarafında bir hata oluştu."
+            toast.error("Müşteri Eklenemedi", { description: message })
         }
     })
 }
@@ -82,17 +51,16 @@ export function useUpdateCustomer() {
 
     return useMutation({
         mutationFn: async ({ id, data }: { id: string, data: CustomerFormValues }) => {
-            // Gerçek API: const { data: res } = await api.put(`/customers/${id}`, data)
-            // return res
-
-            return { id, ...data } as Customer
+            const { data: res } = await api.put(`/customers/${id}`, data)
+            return res as Customer
         },
         onSuccess: (data) => {
-            queryClient.setQueryData<Customer[]>(crmKeys.lists(), (old) => {
-                if (!old) return []
-                return old.map(c => c.id === data.id ? data : c)
-            })
+            queryClient.invalidateQueries({ queryKey: crmKeys.lists() });
             toast.success("Müşteri Başarıyla Güncellendi")
+        },
+        onError: (err: any) => {
+            const message = err?.response?.data?.message || "Sunucu tarafında bir hata oluştu."
+            toast.error("Müşteri Güncellenemedi", { description: message })
         }
     })
 }
@@ -103,15 +71,16 @@ export function useDeleteCustomer() {
 
     return useMutation({
         mutationFn: async (id: string) => {
-            // Gerçek API: await api.delete(`/customers/${id}`)
+            await api.delete(`/customers/${id}`)
             return id
         },
         onSuccess: (id) => {
-            queryClient.setQueryData<Customer[]>(crmKeys.lists(), (old) => {
-                if (!old) return []
-                return old.filter(c => c.id !== id)
-            })
+            queryClient.invalidateQueries({ queryKey: crmKeys.lists() });
             toast.success("Müşteri Başarıyla Silindi")
+        },
+        onError: (err: any) => {
+            const message = err?.response?.data?.message || "Müşteri silinirken bir hata oluştu."
+            toast.error("Silme İşlemi Başarısız", { description: message })
         }
     })
 }

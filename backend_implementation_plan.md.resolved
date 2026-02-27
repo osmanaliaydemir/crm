@@ -1,0 +1,792 @@
+# 🏗️ Backend İş Planı — Universal CRM & ERP
+
+Frontend'teki 17 aşamaya birebir karşılık gelen, **modüler** ve **adım adım** ilerlenecek kapsamlı bir .NET 9 (Web API) backend planıdır.
+
+> [!IMPORTANT]
+> Her modül, bir öncekinin tamamlanmasına bağımlı değildir (aksine belirtilmedikçe). Ancak **Modül 0 (Altyapı)** tüm modüllerin ön koşuludur ve ilk tamamlanması gereken aşamadır.
+
+---
+
+## Teknoloji ve Karar Matrisi
+
+| Katman              | Teknoloji / Yaklaşım                                   |
+| :-                  | :-                                                      |
+| **Runtime**         | .NET 9, C# 13                                          |
+| **Web Framework**   | ASP.NET Core Minimal API (veya Controller — mevcut stile göre) |
+| **ORM (Yazma)**     | EF Core 9 (Code-First, Migrations)                     |
+| **ORM (Okuma)**     | Dapper (performans gerektiren sorgularda)               |
+| **Veritabanı**      | MS SQL Server                                           |
+| **Kimlik Doğrulama**| JWT Bearer Token (Access + Refresh Token)               |
+| **Yetkilendirme**   | Policy-Based Authorization (RBAC)                       |
+| **Validasyon**      | FluentValidation                                        |
+| **Loglama**         | Serilog (Structured, Correlation ID)                    |
+| **API Belgeleri**   | Scalar (veya Swagger/Swashbuckle)                       |
+| **Test**            | xUnit + Moq + FluentAssertions                         |
+| **Dosya Depolama**  | Azure Blob Storage veya MinIO (veya yerel disk — MVP)   |
+
+---
+
+## Veritabanı ER Diyagramı (Ana İlişki Haritası)
+
+```mermaid
+erDiagram
+    Users ||--o{ Customers : "creates"
+    Users ||--o{ Transactions : "records"
+    Users ||--o{ LeaveRequests : "submits"
+    Users ||--o{ Expenses : "submits"
+    Users ||--o{ Announcements : "publishes"
+    Users ||--o{ Notifications : "receives"
+    Users ||--o{ AuditLogs : "generates"
+    Users }o--|| Departments : "belongs_to"
+
+    Customers ||--o{ Interactions : "has"
+    Customers ||--o{ CustomerFiles : "has"
+    Customers ||--o{ Orders : "places"
+    Customers ||--o{ Invoices : "receives"
+    Customers ||--o{ PipelineDeals : "participates_in"
+
+    Orders ||--o{ OrderItems : "contains"
+    Invoices ||--o{ InvoiceItems : "contains"
+
+    Departments ||--o{ Users : "includes"
+
+    Users ||--o{ PerformanceReviews : "evaluated_by"
+    Users ||--o{ PayrollRecords : "paid_with"
+    Users ||--o{ CalendarEvents : "owns"
+```
+
+---
+
+## Modül 0: Proje Altyapısı ve Temel Katmanlar ⚙️
+> **Bağımlılık:** Yok (İlk Adım)
+> **Öncelik:** 🔴 Kritik — Diğer tüm modüllerin ön koşulu
+
+### Amaç
+Solution yapısını, katmanlı mimariyi, veritabanı bağlantısını, kimlik doğrulama/yetkilendirme altyapısını ve ortak servisleri kurmak.
+
+### Proje Yapısı (Solution)
+```
+backend/
+├── src/
+│   ├── CRM.API/           → Endpoint tanımları, Middleware, Program.cs
+│   ├── CRM.Domain/        → Entity, Enum, Value Object, Interface tanımları
+│   ├── CRM.Application/   → DTO, Servis arayüzleri, Validasyon, İş mantığı
+│   └── CRM.Infrastructure/→ EF Core DbContext, Repository, Dış servisler
+├── tests/
+│   ├── CRM.UnitTests/
+│   └── CRM.IntegrationTests/
+└── CRM.sln
+```
+
+### Yapılacaklar
+
+#### 1. Solution ve Proje Oluşturma
+- `dotnet new sln -n CRM`
+- Her katman için `classlib` veya `webapi` projeleri oluşturma
+- Proje referanslarının kurulması (API → Application → Domain ← Infrastructure)
+
+#### 2. Entity Base Sınıfları
+```csharp
+// CRM.Domain/Common/BaseEntity.cs
+public abstract class BaseEntity
+{
+    public Guid Id { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public string CreatedBy { get; set; } = string.Empty;
+    public DateTime? UpdatedAt { get; set; }
+    public string? UpdatedBy { get; set; }
+    public bool IsDeleted { get; set; } // Soft Delete
+}
+```
+
+#### 3. Veritabanı Altyapısı
+- **`CrmDbContext`**: EF Core DbContext sınıfı
+- **`SaveChangesAsync` override**: Audit alanlarının (CreatedAt, UpdatedAt, CreatedBy) otomatik doldurulması
+- **Soft Delete Filtresi**: Global Query Filter ile `IsDeleted == false` koşulu
+- **Migration**: İlk migration (`InitialCreate`) ve seed data
+
+#### 4. Kimlik Doğrulama (JWT Authentication)
+| Dosya | İçerik |
+| :- | :- |
+| `JwtSettings.cs` | Issuer, Audience, SecretKey, AccessTokenExpiry, RefreshTokenExpiry |
+| `TokenService.cs` | JWT token üretimi ve doğrulama |
+| `AuthController.cs` | `POST /api/auth/login`, `POST /api/auth/register`, `POST /api/auth/refresh` |
+
+> **Frontend Bağlantı Noktası:** [middleware.ts](file:///Users/osmanaliaydemir/Documents/CRM/frontend/src/middleware.ts) cookie'den `token` okuyor. [api.ts](file:///Users/osmanaliaydemir/Documents/CRM/frontend/src/lib/api.ts) interceptor'ı `Authorization: Bearer {token}` header'ı ekliyor. Backend bu token'ı doğrulamalı.
+
+#### 5. Yetkilendirme (RBAC)
+Frontend'teki roller: `admin`, `sales`, `hr`, `finance`, `support`, `employee`
+```csharp
+// Policy tanımları
+builder.Services.AddAuthorizationBuilder()
+    .AddPolicy("AdminOnly", p => p.RequireRole("admin"))
+    .AddPolicy("HRAccess", p => p.RequireRole("admin", "hr"))
+    .AddPolicy("FinanceAccess", p => p.RequireRole("admin", "finance"))
+    .AddPolicy("SalesAccess", p => p.RequireRole("admin", "sales"))
+    .AddPolicy("EmployeeAccess", p => p.RequireRole("admin", "hr", "employee"));
+```
+
+#### 6. Ortak Altyapı Servisleri
+- **Correlation ID Middleware**: Her requeste `X-Correlation-Id` header'ı atama
+- **Global Exception Handler**: `ProblemDetails` formatında hata döndürme
+- **Serilog Konfigürasyonu**: Console + File sink, yapılandırılmış log formatı
+- **Pagination DTO**: `PagedResult<T>`, `PaginationRequest` (Page, PageSize, SortBy, SortOrder)
+
+#### 7. CORS Yapılandırması
+```csharp
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("Frontend", cors => cors
+        .WithOrigins("http://localhost:3000") // Frontend dev server
+        .AllowAnyHeader()
+        .AllowAnyMethod()
+        .AllowCredentials());
+});
+```
+
+### Veritabanı Tabloları
+| Tablo | Açıklama |
+| :- | :- |
+| [Users](file:///Users/osmanaliaydemir/Documents/CRM/frontend/src/components/command-menu.tsx#256-277) | Kullanıcı bilgileri, şifre hash, rol |
+| `RefreshTokens` | Refresh token takibi |
+
+### API Endpoint'leri
+| Method | Endpoint | Açıklama |
+| :- | :- | :- |
+| POST | `/api/auth/register` | Yeni kullanıcı kaydı |
+| POST | `/api/auth/login` | Giriş (JWT döndürür) |
+| POST | `/api/auth/refresh` | Token yenileme |
+| GET | `/api/auth/me` | Oturumdaki kullanıcı bilgisi |
+| POST | `/api/auth/logout` | Çıkış (Refresh token iptal) |
+
+### Doğrulama Kriterleri
+- [x] Solution build oluyor
+- [x] DB migration başarılı
+- [x] Login → JWT token dönüyor
+- [x] Korumalı endpoint'e tokensız istek → 401
+- [x] Yetkisiz role sahip token → 403
+
+---
+
+## Modül 1: CRM — Müşteri Yönetimi 👥
+> **Bağımlılık:** Modül 0
+> **Frontend Karşılığı:** `/crm` sayfası, [use-crm.ts](file:///Users/osmanaliaydemir/Documents/CRM/frontend/src/hooks/api/use-crm.ts) hook'ları, [crm.ts](file:///Users/osmanaliaydemir/Documents/CRM/frontend/src/types/crm.ts) tipleri ve şemaları
+
+### Amaç
+Müşteri (B2B/B2C) kartlarının CRUD işlemlerini, etkileşim geçmişini ve dosya yönetimini sağlamak.
+
+### Entity'ler
+
+#### [Customer](file:///Users/osmanaliaydemir/Documents/CRM/frontend/src/types/crm.ts#3-14)
+| Alan | Tip | Açıklama |
+| :- | :- | :- |
+| Id | Guid (PK) | Otomatik üretilir |
+| Name | string(200) | Firma/Kişi adı |
+| Type | enum (B2B, B2C) | Müşteri tipi |
+| ContactName | string(100) | Yetkili kişi |
+| Email | string(150) | E-posta |
+| Phone | string(20) | Telefon |
+| City | string(50) | Şehir |
+| Status | string(20) | "Aktif", "Pasif" vb. |
+| HealthScore | int | 0-100 arası sağlık puanı |
+
+#### [Interaction](file:///Users/osmanaliaydemir/Documents/CRM/frontend/src/types/crm.ts#15-25)
+| Alan | Tip | Açıklama |
+| :- | :- | :- |
+| Id | Guid (PK) | |
+| CustomerId | Guid (FK) | Customer ile ilişki |
+| Type | string | "Telefon", "E-posta", "Toplantı" vb. |
+| Title | string(200) | Başlık |
+| Description | string(max) | Detay |
+| Date | DateTime | Etkileşim tarihi |
+
+#### [CustomerFile](file:///Users/osmanaliaydemir/Documents/CRM/frontend/src/types/crm.ts#26-34)
+| Alan | Tip | Açıklama |
+| :- | :- | :- |
+| Id | Guid (PK) | |
+| CustomerId | Guid (FK) | |
+| FileName | string(200) | Dosya adı |
+| FileSize | long | Byte cinsinden boyut |
+| ContentType | string(100) | MIME tipi |
+| StoragePath | string | Depolama yolu |
+
+### API Endpoint'leri
+| Method | Endpoint | Yetki | Açıklama |
+| :- | :- | :- | :- |
+| GET | `/api/customers` | Sales, Admin | Sayfalı müşteri listesi |
+| GET | `/api/customers/{id}` | Sales, Admin | Müşteri detayı |
+| POST | `/api/customers` | Sales, Admin | Yeni müşteri |
+| PUT | `/api/customers/{id}` | Sales, Admin | Müşteri güncelleme |
+| DELETE | `/api/customers/{id}` | Admin | Müşteri silme (soft) |
+| GET | `/api/customers/{id}/interactions` | Sales, Admin | Etkileşim geçmişi |
+| POST | `/api/customers/{id}/interactions` | Sales, Admin | Etkileşim ekleme |
+| GET | `/api/customers/{id}/files` | Sales, Admin | Dosya listesi |
+| POST | `/api/customers/{id}/files` | Sales, Admin | Dosya yükleme |
+
+### Validasyon Kuralları (FluentValidation)
+```csharp
+public class CreateCustomerValidator : AbstractValidator<CreateCustomerDto>
+{
+    public CreateCustomerValidator()
+    {
+        RuleFor(x => x.Name).NotEmpty().MinimumLength(2).MaximumLength(200);
+        RuleFor(x => x.Email).NotEmpty().EmailAddress();
+        RuleFor(x => x.Phone).NotEmpty().MinimumLength(10);
+        RuleFor(x => x.City).NotEmpty().MinimumLength(2);
+        RuleFor(x => x.HealthScore).InclusiveBetween(0, 100);
+    }
+}
+```
+
+### İndeks Önerileri
+- `IX_Customers_Name` — Arama performansı
+- `IX_Customers_Status` — Filtreleme
+- `IX_Interactions_CustomerId` — FK join optimizasyonu
+
+---
+
+## Modül 2: Finans & Ön Muhasebe 💰
+> **Bağımlılık:** Modül 0
+> **Frontend Karşılığı:** `/finance` sayfası, [use-finance.ts](file:///Users/osmanaliaydemir/Documents/CRM/frontend/src/hooks/api/use-finance.ts) hook'ları, [finance.ts](file:///Users/osmanaliaydemir/Documents/CRM/frontend/src/types/finance.ts) tipleri
+
+### Amaç
+Finansal işlemlerin (Gelir/Gider) CRUD'unu, kasa-banka hesap yönetimini ve fatura üretim altyapısını sağlamak.
+
+### Entity'ler
+
+#### [Transaction](file:///Users/osmanaliaydemir/Documents/CRM/frontend/src/types/finance.ts#5-14)
+| Alan | Tip | Açıklama |
+| :- | :- | :- |
+| Id | Guid (PK) | |
+| Date | DateTime | İşlem tarihi |
+| Description | string(500) | Açıklama |
+| Type | enum (In, Out) | Gelir/Gider |
+| Category | string(50) | Kategori ("Tahsilat", "Gider" vb.) |
+| Amount | decimal(18,2) | Tutar |
+| Status | enum | Tamamlandı, Bekliyor, İptal |
+| AccountId | Guid? (FK) | İlişkili hesap |
+
+#### `BankAccount`
+| Alan | Tip | Açıklama |
+| :- | :- | :- |
+| Id | Guid (PK) | |
+| Name | string(100) | Hesap adı |
+| Type | enum (Bank, Cash, Credit) | Hesap tipi |
+| Detail | string(200) | IBAN veya açıklama |
+| Balance | decimal(18,2) | Güncel bakiye |
+
+#### [Invoice](file:///Users/osmanaliaydemir/Documents/CRM/frontend/src/app/%28app%29/finance/components/invoice-generator.tsx#13-19)
+| Alan | Tip | Açıklama |
+| :- | :- | :- |
+| Id | Guid (PK) | |
+| InvoiceNumber | string(20) | Fatura numarası (Unique) |
+| CustomerId | Guid (FK) | Cari / Müşteri |
+| IssueDate | DateTime | Düzenleme tarihi |
+| DueDate | DateTime | Son ödeme tarihi |
+| SubTotal | decimal | Ara toplam |
+| TaxRate | decimal | KDV oranı (%) |
+| TaxAmount | decimal | KDV tutarı |
+| TotalAmount | decimal | Genel toplam |
+| Status | enum | Taslak, Gönderildi, Ödendi |
+| Notes | string? | Notlar |
+
+#### [InvoiceItem](file:///Users/osmanaliaydemir/Documents/CRM/frontend/src/app/%28app%29/finance/components/invoice-generator.tsx#13-19)
+| Alan | Tip | Açıklama |
+| :- | :- | :- |
+| Id | Guid (PK) | |
+| InvoiceId | Guid (FK) | |
+| Description | string(200) | Kalem açıklaması |
+| Quantity | int | Adet |
+| UnitPrice | decimal | Birim fiyat |
+| TotalPrice | decimal | Toplam (computed) |
+
+### API Endpoint'leri
+| Method | Endpoint | Yetki |
+| :- | :- | :- |
+| GET | `/api/transactions` | Finance, Admin |
+| POST | `/api/transactions` | Finance, Admin |
+| PUT | `/api/transactions/{id}/status` | Finance, Admin |
+| DELETE | `/api/transactions/{id}` | Admin |
+| GET | `/api/bank-accounts` | Finance, Admin |
+| POST | `/api/bank-accounts` | Finance, Admin |
+| GET | `/api/invoices` | Finance, Admin |
+| POST | `/api/invoices` | Finance, Admin |
+| GET | `/api/invoices/{id}/pdf` | Finance, Admin |
+
+---
+
+## Modül 3: Satış Fırsatları (Pipeline / Kanban) 🎯
+> **Bağımlılık:** Modül 0, Modül 1
+> **Frontend Karşılığı:** `/pipeline` sayfası
+
+### Entity'ler
+
+#### `PipelineDeal`
+| Alan | Tip | Açıklama |
+| :- | :- | :- |
+| Id | Guid (PK) | |
+| Title | string(200) | Fırsat başlığı |
+| CustomerId | Guid (FK) | İlişkili müşteri |
+| Stage | enum | Lead, Qualified, Proposal, Negotiation, Won, Lost |
+| Value | decimal | Tahmini gelir |
+| Probability | int | Kazanma olasılığı (%) |
+| AssignedToId | Guid (FK → Users) | Sorumlu satışçı |
+| ExpectedCloseDate | DateTime? | Tahmini kapanış |
+| SortOrder | int | Kanban sıralama |
+
+### API Endpoint'leri
+| Method | Endpoint | Yetki |
+| :- | :- | :- |
+| GET | `/api/pipeline` | Sales, Admin |
+| POST | `/api/pipeline` | Sales, Admin |
+| PUT | `/api/pipeline/{id}` | Sales, Admin |
+| PATCH | `/api/pipeline/{id}/stage` | Sales, Admin |
+| PATCH | `/api/pipeline/{id}/reorder` | Sales, Admin |
+| DELETE | `/api/pipeline/{id}` | Admin |
+
+---
+
+## Modül 4: Ürün & Envanter Yönetimi 📦
+> **Bağımlılık:** Modül 0
+> **Frontend Karşılığı:** `/inventory` sayfası
+
+### Entity'ler
+
+#### [Product](file:///Users/osmanaliaydemir/Documents/CRM/frontend/src/app/%28app%29/inventory/page.tsx#104-115)
+| Alan | Tip | Açıklama |
+| :- | :- | :- |
+| Id | Guid (PK) | |
+| Name | string(200) | Ürün adı |
+| SKU | string(50) | Stok kodu (Unique) |
+| Category | string(50) | Kategori |
+| Price | decimal(18,2) | Birim fiyat |
+| Stock | int | Mevcut stok |
+| MinimumStock | int | Minimum stok seviyesi (Uyarı) |
+| Unit | string(20) | "Adet", "Kg" vb. |
+| IsActive | bool | Aktif/Pasif |
+
+### API Endpoint'leri
+| Method | Endpoint | Yetki |
+| :- | :- | :- |
+| GET | `/api/products` | Sales, Admin |
+| GET | `/api/products/{id}` | Sales, Admin |
+| POST | `/api/products` | Admin |
+| PUT | `/api/products/{id}` | Admin |
+| DELETE | `/api/products/{id}` | Admin |
+| GET | `/api/products/low-stock` | Sales, Admin |
+
+---
+
+## Modül 5: Sipariş Yönetimi 📋
+> **Bağımlılık:** Modül 1, Modül 4
+> **Frontend Karşılığı:** `/orders` sayfası
+
+### Entity'ler
+
+#### `Order`
+| Alan | Tip | Açıklama |
+| :- | :- | :- |
+| Id | Guid (PK) | |
+| OrderNumber | string(20) | Sipariş no (Unique, Otomatik) |
+| CustomerId | Guid (FK) | |
+| OrderDate | DateTime | |
+| Status | enum | Yeni, Hazırlanıyor, Kargoda, Teslim, İptal |
+| TotalAmount | decimal | |
+| ShippingAddress | string? | Teslimat adresi |
+
+#### `OrderItem`
+| Alan | Tip | Açıklama |
+| :- | :- | :- |
+| Id | Guid (PK) | |
+| OrderId | Guid (FK) | |
+| ProductId | Guid (FK) | |
+| Quantity | int | |
+| UnitPrice | decimal | |
+| TotalPrice | decimal | |
+
+### API Endpoint'leri
+| Method | Endpoint | Yetki |
+| :- | :- | :- |
+| GET | `/api/orders` | Sales, Admin |
+| GET | `/api/orders/{id}` | Sales, Admin |
+| POST | `/api/orders` | Sales, Admin |
+| PATCH | `/api/orders/{id}/status` | Sales, Admin |
+| DELETE | `/api/orders/{id}` | Admin |
+
+### İş Kuralları
+- Sipariş oluşturulduğunda stok düşülmeli (`Product.Stock -= quantity`)
+- İptal edildiğinde stok geri eklenmeli
+- Stok yetersizse sipariş kabul edilmemeli → `409 Conflict`
+
+---
+
+## Modül 6: İnsan Kaynakları (HR) 🏢
+> **Bağımlılık:** Modül 0
+> **Frontend Karşılığı:** `/hr` sayfası (Personel, Org Chart)
+
+### Entity'ler
+
+#### `Department`
+| Alan | Tip | Açıklama |
+| :- | :- | :- |
+| Id | Guid (PK) | |
+| Name | string(100) | Departman adı |
+| ManagerId | Guid? (FK → Users) | Departman yöneticisi |
+| ParentDepartmentId | Guid? (FK → Department) | Üst departman (Hiyerarşi) |
+
+#### [Employee](file:///Users/osmanaliaydemir/Documents/CRM/frontend/src/app/%28app%29/hr/page.tsx#126-136) (User'ı genişletir)
+| Alan | Tip | Açıklama |
+| :- | :- | :- |
+| UserId | Guid (FK → Users) | 1:1 ilişki |
+| EmployeeNumber | string(20) | Sicil No |
+| DepartmentId | Guid (FK) | |
+| Position | string(100) | Unvan |
+| HireDate | DateTime | İşe başlama tarihi |
+| Salary | decimal | Brüt maaş |
+| ManagerId | Guid? | Bağlı olduğu yönetici |
+| PhoneInternal | string? | Dahili numara |
+
+### API Endpoint'leri
+| Method | Endpoint | Yetki |
+| :- | :- | :- |
+| GET | `/api/employees` | HR, Admin |
+| GET | `/api/employees/{id}` | HR, Admin |
+| POST | `/api/employees` | HR, Admin |
+| PUT | `/api/employees/{id}` | HR, Admin |
+| DELETE | `/api/employees/{id}` | Admin |
+| GET | `/api/departments` | HR, Admin |
+| POST | `/api/departments` | Admin |
+| GET | `/api/org-chart` | HR, Admin |
+
+---
+
+## Modül 7: İzin Yönetimi 📅
+> **Bağımlılık:** Modül 6
+> **Frontend Karşılığı:** [leaveStore.ts](file:///Users/osmanaliaydemir/Documents/CRM/frontend/src/store/leaveStore.ts), Employee Portal İzin sekmesi, HR İzin Takibi sekmesi
+
+### Entity: [LeaveRequest](file:///Users/osmanaliaydemir/Documents/CRM/frontend/src/store/leaveStore.ts#6-18)
+| Alan | Tip | Açıklama |
+| :- | :- | :- |
+| Id | Guid (PK) | |
+| EmployeeId | Guid (FK → Users) | Başvuran personel |
+| Type | enum | YıllıkIzin, MazeretIzni, HastalıkIzni, ÜcretsizIzin |
+| StartDate | DateTime | Başlangıç |
+| EndDate | DateTime | Bitiş |
+| Days | int | Gün sayısı |
+| Reason | string(500) | Gerekçe |
+| Status | enum | Waiting, Approved, Rejected |
+| ApprovedById | Guid? | Onaylayan kişi |
+| AppliedAt | DateTime | Başvuru tarihi |
+
+### Entity: `LeaveBalance`
+| Alan | Tip | Açıklama |
+| :- | :- | :- |
+| Id | Guid (PK) | |
+| EmployeeId | Guid (FK) | |
+| Year | int | Yıl |
+| TotalDays | int | Toplam hak edilen izin |
+| UsedDays | int | Kullanılan izin |
+| RemainingDays | int (computed) | Kalan |
+
+### API Endpoint'leri
+| Method | Endpoint | Yetki |
+| :- | :- | :- |
+| GET | `/api/leaves` | HR, Admin |
+| GET | `/api/leaves/my` | Employee (kendi izinleri) |
+| POST | `/api/leaves` | Employee |
+| PATCH | `/api/leaves/{id}/approve` | HR, Admin |
+| PATCH | `/api/leaves/{id}/reject` | HR, Admin |
+| GET | `/api/leaves/balance/{employeeId}` | HR, Employee |
+
+### İş Kuralları
+- İzin onaylandığında `LeaveBalance.UsedDays` artırılmalı
+- Yeterli bakiye yoksa talep kabul edilmemeli → `400 Bad Request`
+- Aynı tarih aralığında çakışan izin kontrolü yapılmalı
+
+---
+
+## Modül 8: Harcama / Masraf Yönetimi 🧾
+> **Bağımlılık:** Modül 6
+> **Frontend Karşılığı:** [expenseStore.ts](file:///Users/osmanaliaydemir/Documents/CRM/frontend/src/store/expenseStore.ts), Employee Portal ve HR Masraf sekmeleri
+
+### Entity: [Expense](file:///Users/osmanaliaydemir/Documents/CRM/frontend/src/store/expenseStore.ts#6-19)
+| Alan | Tip | Açıklama |
+| :- | :- | :- |
+| Id | Guid (PK) | |
+| EmployeeId | Guid (FK) | Başvuran personel |
+| Category | enum | Yemek, Yol, Konaklama, Yazılım, Diğer |
+| Amount | decimal(18,2) | Tutar |
+| Currency | string(3) | "TRY", "USD" vb. |
+| Description | string(500) | Açıklama |
+| Date | DateTime | Masraf tarihi |
+| Status | enum | Waiting, Approved, Rejected, Paid |
+| AppliedAt | DateTime | Başvuru tarihi |
+| ReceiptUrl | string? | Fiş/Fatura dosya yolu |
+
+### API Endpoint'leri
+| Method | Endpoint | Yetki |
+| :- | :- | :- |
+| GET | `/api/expenses` | HR, Finance, Admin |
+| GET | `/api/expenses/my` | Employee |
+| POST | `/api/expenses` | Employee |
+| PATCH | `/api/expenses/{id}/approve` | HR, Admin |
+| PATCH | `/api/expenses/{id}/reject` | HR, Admin |
+| PATCH | `/api/expenses/{id}/pay` | Finance, Admin |
+| POST | `/api/expenses/{id}/receipt` | Employee (dosya yükleme) |
+
+---
+
+## Modül 9: Performans Değerlendirme 🎯
+> **Bağımlılık:** Modül 6
+> **Frontend Karşılığı:** HR Performans sekmesi
+
+### Entity: `PerformanceReview`
+| Alan | Tip | Açıklama |
+| :- | :- | :- |
+| Id | Guid (PK) | |
+| EmployeeId | Guid (FK) | Değerlendirilen personel |
+| ReviewerId | Guid (FK → Users) | Değerlendirici |
+| Period | string(20) | "2026-Q1" vb. |
+| Score | int | 0-100 puan |
+| GoalAlignment | int | 0-100 hedef uyumu |
+| Strengths | string? | Güçlü yönler |
+| AreasToImprove | string? | Gelişim alanları |
+| ReviewDate | DateTime | Değerlendirme tarihi |
+
+### API Endpoint'leri
+| Method | Endpoint | Yetki |
+| :- | :- | :- |
+| GET | `/api/performance` | HR, Admin |
+| GET | `/api/performance/employee/{id}` | HR, Admin |
+| POST | `/api/performance` | HR, Admin |
+| PUT | `/api/performance/{id}` | HR, Admin |
+
+---
+
+## Modül 10: Bordro (Payroll) 💵
+> **Bağımlılık:** Modül 6, Modül 8
+> **Frontend Karşılığı:** Finans Bordro Yönetimi sekmesi
+
+### Entity: `PayrollRecord`
+| Alan | Tip | Açıklama |
+| :- | :- | :- |
+| Id | Guid (PK) | |
+| EmployeeId | Guid (FK) | |
+| Period | string(10) | "2026-02" |
+| GrossSalary | decimal | Brüt maaş |
+| NetSalary | decimal | Net maaş |
+| TaxDeduction | decimal | Vergi kesintisi |
+| SSKDeduction | decimal | SGK kesintisi |
+| ExpenseReimbursement | decimal | Masraf iadesi (Modül 8'den) |
+| TotalPayment | decimal | Toplam ödeme |
+| Status | enum | Pending, Paid |
+| PaidAt | DateTime? | Ödeme tarihi |
+
+### API Endpoint'leri
+| Method | Endpoint | Yetki |
+| :- | :- | :- |
+| GET | `/api/payroll` | Finance, Admin |
+| POST | `/api/payroll/generate/{period}` | Finance, Admin |
+| PATCH | `/api/payroll/{id}/pay` | Finance, Admin |
+| GET | `/api/payroll/{id}/pdf` | Finance, Employee |
+| GET | `/api/payroll/my` | Employee |
+
+---
+
+## Modül 11: Şirket Duyuruları 📢
+> **Bağımlılık:** Modül 0
+> **Frontend Karşılığı:** [announcementStore.ts](file:///Users/osmanaliaydemir/Documents/CRM/frontend/src/store/announcementStore.ts), HR Duyurular sekmesi
+
+### Entity: [Announcement](file:///Users/osmanaliaydemir/Documents/CRM/frontend/src/store/announcementStore.ts#5-13)
+| Alan | Tip | Açıklama |
+| :- | :- | :- |
+| Id | Guid (PK) | |
+| Title | string(200) | Başlık |
+| Content | string(max) | İçerik |
+| Type | enum | Genel, Finans, İdariİşler, Acil, Sistem |
+| IsActive | bool | Yayın durumu |
+| PublishedById | Guid (FK → Users) | Yayınlayan |
+
+### API Endpoint'leri
+| Method | Endpoint | Yetki |
+| :- | :- | :- |
+| GET | `/api/announcements` | Tüm roller |
+| GET | `/api/announcements/active` | Tüm roller |
+| POST | `/api/announcements` | HR, Admin |
+| PUT | `/api/announcements/{id}` | HR, Admin |
+| PATCH | `/api/announcements/{id}/toggle` | HR, Admin |
+| DELETE | `/api/announcements/{id}` | Admin |
+
+---
+
+## Modül 12: Bildirim Sistemi 🔔
+> **Bağımlılık:** Modül 0
+> **Frontend Karşılığı:** [notifications.ts](file:///Users/osmanaliaydemir/Documents/CRM/frontend/src/store/notifications.ts) store, headerApp bildirim dropdown'u
+
+### Entity: [Notification](file:///Users/osmanaliaydemir/Documents/CRM/frontend/src/store/notifications.ts#99-110)
+| Alan | Tip | Açıklama |
+| :- | :- | :- |
+| Id | Guid (PK) | |
+| UserId | Guid (FK) | Alıcı kullanıcı |
+| Type | enum | Order, Finance, Calendar, Mention, System |
+| Title | string(200) | Başlık |
+| Description | string(500) | Açıklama |
+| IsRead | bool | Okundu mu? |
+| Priority | enum | High, Medium, Low |
+
+### API Endpoint'leri
+| Method | Endpoint | Yetki |
+| :- | :- | :- |
+| GET | `/api/notifications` | Authenticated |
+| PATCH | `/api/notifications/{id}/read` | Authenticated |
+| PATCH | `/api/notifications/read-all` | Authenticated |
+| DELETE | `/api/notifications/{id}` | Authenticated |
+
+---
+
+## Modül 13: Takvim (Calendar) 📆
+> **Bağımlılık:** Modül 0
+> **Frontend Karşılığı:** `/calendar` sayfası
+
+### Entity: `CalendarEvent`
+| Alan | Tip | Açıklama |
+| :- | :- | :- |
+| Id | Guid (PK) | |
+| Title | string(200) | Başlık |
+| Description | string? | Açıklama |
+| StartDate | DateTime | Başlangıç |
+| EndDate | DateTime | Bitiş |
+| AllDay | bool | Tüm gün mü? |
+| Location | string? | Konum |
+| Type | enum | Meeting, Task, Reminder, Leave |
+| OwnerId | Guid (FK → Users) | Oluşturan |
+| CustomerId | Guid? (FK) | İlişkili müşteri |
+
+### API Endpoint'leri
+| Method | Endpoint | Yetki |
+| :- | :- | :- |
+| GET | `/api/calendar` | Authenticated |
+| GET | `/api/calendar?from={date}&to={date}` | Authenticated |
+| POST | `/api/calendar` | Authenticated |
+| PUT | `/api/calendar/{id}` | Authenticated |
+| DELETE | `/api/calendar/{id}` | Authenticated |
+
+---
+
+## Modül 14: Raporlama & Dashboard 📊
+> **Bağımlılık:** Modül 1-5
+> **Frontend Karşılığı:** `/reports` ve Ana Dashboard KPI'ları
+
+### API Endpoint'leri
+| Method | Endpoint | Yetki | Açıklama |
+| :- | :- | :- | :- |
+| GET | `/api/dashboard/stats` | Admin | Genel KPI'lar |
+| GET | `/api/dashboard/sales` | Sales, Admin | Satış KPI'ları |
+| GET | `/api/dashboard/finance` | Finance, Admin | Finans KPI'ları |
+| GET | `/api/dashboard/hr` | HR, Admin | İK KPI'ları |
+| GET | `/api/reports/revenue?period=monthly` | Finance, Admin | Gelir raporu |
+| GET | `/api/reports/customers/growth` | Sales, Admin | Müşteri büyümesi |
+| GET | `/api/reports/products/bestsellers` | Sales, Admin | En çok satanlar |
+| GET | `/api/reports/export?format=xlsx` | Admin | Dışa aktarım |
+
+> **Not**: Bu endpoint'ler özellikle **Dapper** ile optimize edilmelidir. Aggregate sorgular EF Core yerine doğrudan SQL ile daha performanslı çalışacaktır.
+
+---
+
+## Modül 15: İşlem Denetimi (Audit Trail) 🔍
+> **Bağımlılık:** Modül 0
+> **Frontend Karşılığı:** `/settings/audit-logs` sayfası
+
+### Entity: [AuditLog](file:///Users/osmanaliaydemir/Documents/CRM/frontend/src/app/%28app%29/settings/audit-logs/page.tsx#41-51)
+| Alan | Tip | Açıklama |
+| :- | :- | :- |
+| Id | Guid (PK) | |
+| UserId | Guid (FK) | İşlemi yapan |
+| Action | string(50) | "Create", "Update", "Delete", "Login" |
+| EntityType | string(50) | "Customer", "Order" vb. |
+| EntityId | string(50) | İlişkili kayıt ID'si |
+| OldValues | string? (JSON) | Eski değerler |
+| NewValues | string? (JSON) | Yeni değerler |
+| IpAddress | string? | İstek IP adresi |
+| UserAgent | string? | Tarayıcı bilgisi |
+| Timestamp | DateTime | İşlem zamanı |
+
+### Otomatik Kayıt Mekanizması
+`SaveChangesAsync` override'ında EF Core `ChangeTracker` kullanılarak:
+- Added, Modified, Deleted entity'ler otomatik loglanır
+- JSON olarak eski/yeni değerler saklanır
+
+### API Endpoint'leri
+| Method | Endpoint | Yetki |
+| :- | :- | :- |
+| GET | `/api/audit-logs` | Admin |
+| GET | `/api/audit-logs?userId={id}&module={mod}` | Admin |
+
+---
+
+## Modül 16: B2B Müşteri Portalı 🤝
+> **Bağımlılık:** Modül 1-2, Modül 5
+> **Frontend Karşılığı:** `/b2b-portal` sayfası
+
+### Amaç
+Müşterilerin kendi siparişlerini, faturalarını ve hesap bakiyelerini görebildiği **kısıtlı API katmanı**.
+
+### API Endpoint'leri (Müşteri scope'lu)
+| Method | Endpoint | Yetki | Açıklama |
+| :- | :- | :- | :- |
+| GET | `/api/portal/orders` | Customer | Kendi siparişleri |
+| GET | `/api/portal/invoices` | Customer | Kendi faturaları |
+| GET | `/api/portal/balance` | Customer | Limit ve bakiye bilgisi |
+| GET | `/api/portal/representative` | Customer | Temsilci bilgisi |
+| POST | `/api/portal/support` | Customer | Destek talebi |
+
+> **Güvenlik**: Bu endpoint'lere erişim için ayrı bir `CustomerUser` entity ve özel JWT claim'i (`customer_id`) kullanılmalıdır.
+
+---
+
+## Uygulama Sırası (Önerilen Yol Haritası)
+
+```mermaid
+gantt
+    title Backend Geliştirme Yol Haritası
+    dateFormat  YYYY-MM-DD
+    
+    section Altyapı
+    Modül 0 - Proje Altyapısı           :m0, 2026-02-27, 5d
+    
+    section Çekirdek İş Mantığı
+    Modül 1 - CRM Müşteriler            :m1, after m0, 4d
+    Modül 2 - Finans                     :m2, after m0, 4d
+    Modül 4 - Envanter                   :m4, after m0, 3d
+    Modül 3 - Pipeline                   :m3, after m1, 3d
+    Modül 5 - Siparişler                 :m5, after m4, 3d
+    
+    section İK Modülleri
+    Modül 6 - İK / Personel              :m6, after m0, 4d
+    Modül 7 - İzin Yönetimi              :m7, after m6, 3d
+    Modül 8 - Masraf Yönetimi            :m8, after m6, 3d
+    Modül 9 - Performans                 :m9, after m6, 2d
+    Modül 10 - Bordro                    :m10, after m8, 3d
+    
+    section Yardımcı Sistemler
+    Modül 11 - Duyurular                 :m11, after m0, 2d
+    Modül 12 - Bildirimler               :m12, after m0, 2d
+    Modül 13 - Takvim                    :m13, after m0, 3d
+    Modül 15 - Audit Trail               :m15, after m0, 2d
+    
+    section İleri Düzey
+    Modül 14 - Raporlama                 :m14, after m5, 4d    
+    Modül 16 - B2B Portal                :m16, after m5, 3d
+```
+
+---
+
+## Genel Doğrulama Stratejisi
+
+Her modül tamamlandığında:
+
+1. **Unit Test:** Servis katmanı iş kuralları
+2. **Integration Test:** API endpoint'leri (WebApplicationFactory)
+3. **Frontend Bağlantı Testi:** Zustand store → React Query hook → Axios → API endpoint zincirinin uçtan uca doğrulanması
+4. **Swagger/Scalar:** API dokümantasyonunun güncel tutulması
+5. **Build + Migration:** `dotnet build` ve `dotnet ef database update` başarılı olmalı

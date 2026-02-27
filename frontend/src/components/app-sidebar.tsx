@@ -21,7 +21,9 @@ import {
 } from "@/components/ui/sidebar"
 import { Button } from "@/components/ui/button"
 import { motion, AnimatePresence } from "framer-motion"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
+import { authService } from "@/lib/services/auth.service"
+import { destroyCookie } from "nookies"
 import {
   LayoutDashboard,
   Users,
@@ -127,8 +129,25 @@ const settingsItems = [
 export function AppSidebar() {
   const { state, setOpen } = useSidebar()
   const pathname = usePathname()
-  const { user } = useAuthStore()
+  const router = useRouter()
+  const { user, logout: logoutFromStore } = useAuthStore()
   const [mounted, setMounted] = useState(false)
+
+  const handleLogout = async () => {
+    try {
+      // Backend'e haber ver
+      await authService.logout();
+    } catch (error) {
+      console.error("Logout error:", error);
+    } finally {
+      // Çerezleri temizle
+      destroyCookie(null, "token", { path: '/' });
+      // Store'u temizle
+      logoutFromStore();
+      // Login sayfasına yönlendir
+      router.push("/login");
+    }
+  }
 
   useEffect(() => {
     setMounted(true)
@@ -277,8 +296,8 @@ export function AppSidebar() {
           className="flex items-center gap-3 p-2 rounded-2xl bg-muted/30 border border-sidebar-border/20 hover:bg-muted/50 transition-all group"
         >
           <div className="relative">
-            <div className="size-9 rounded-xl bg-linear-to-br from-primary/20 to-primary/5 border border-primary/10 flex items-center justify-center text-primary font-bold shadow-sm">
-              OA
+            <div className="size-9 rounded-xl bg-linear-to-br from-primary/20 to-primary/5 border border-primary/10 flex items-center justify-center text-primary font-bold shadow-sm text-xs">
+              {user?.name?.split(' ').map(n => n[0]).join('').toUpperCase() || "..."}
             </div>
             <div className="absolute -bottom-0.5 -right-0.5 size-3 rounded-full bg-green-500 border-2 border-background shadow-sm" title="Online" />
           </div>
@@ -289,13 +308,18 @@ export function AppSidebar() {
               animate={{ opacity: 1 }}
               className="flex flex-col flex-1 min-w-0"
             >
-              <span className="text-xs font-bold truncate">Osman Ali</span>
-              <span className="text-[10px] text-muted-foreground truncate font-medium">Baş Mimarı</span>
+              <span className="text-xs font-bold truncate">{user?.name || "Kullanıcı"}</span>
+              <span className="text-[10px] text-muted-foreground truncate font-medium capitalize">{user?.role || "Rol Tanımsız"}</span>
             </motion.div>
           )}
 
           {state === "expanded" && (
-            <Button variant="ghost" size="icon" className="size-7 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
+              onClick={handleLogout}
+            >
               <LogOut className="size-4 text-muted-foreground hover:text-destructive" />
             </Button>
           )}
