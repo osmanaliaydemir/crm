@@ -88,9 +88,11 @@ import { toast } from "sonner"
 import { PageWrapper } from "@/components/page-wrapper"
 import { useThemeStore, ThemePrimaryColor } from "@/store/themeStore"
 import { useTheme } from "next-themes"
+import { Skeleton } from "@/components/ui/skeleton"
+import { useUsers, useSystemSettings, SystemUser, SystemSetting } from "@/hooks/api/use-system-settings"
+import { api } from "@/lib/api"
 
 const userSchema = z.object({
-    id: z.number().optional(),
     name: z.string().min(2, "Ad Soyad en az 2 karakter olmalıdır"),
     email: z.string().email("Geçerli bir e-posta giriniz"),
     role: z.string().min(2, "Rol seçimi zorunludur"),
@@ -99,24 +101,6 @@ const userSchema = z.object({
 })
 
 type UserFormValues = z.infer<typeof userSchema>
-
-export type UserType = {
-    id: number;
-    name: string;
-    email: string;
-    role: string;
-    department: string;
-    status: string;
-    initials: string;
-}
-
-// Mock Kullanıcı Verisi
-const initialSystemUsers: UserType[] = [
-    { id: 1, name: "Osman Ali", email: "osman@universal.com", role: "Super Admin", department: "Yönetim", status: "Aktif", initials: "OA" },
-    { id: 2, name: "Zeynep Ata", email: "zeynep@universal.com", role: "Satış Yöneticisi", department: "Satış", status: "Aktif", initials: "ZA" },
-    { id: 3, name: "Mehmet Kaya", email: "mehmet@universal.com", role: "Satış Temsilcisi", department: "Satış", status: "Aktif", initials: "MK" },
-    { id: 4, name: "Ahmet Yılmaz", email: "ahmet@universal.com", role: "Muhasebe Uzmanı", department: "Finans", status: "Pasif", initials: "AY" },
-]
 
 type SystemModule = "Dashboard" | "CRM" | "Finance" | "Pipeline" | "Inventory" | "Calendar" | "HR" | "Reports" | "Settings"
 
@@ -174,15 +158,17 @@ export default function SystemSettingsPage() {
     const { theme, setTheme } = useTheme()
     const [mounted, setMounted] = useState(false)
 
+    const { users, isLoading: usersLoading, updateStatus, deleteUser } = useUsers()
+    const { settings, isLoading: settingsLoading, saveSettings } = useSystemSettings()
+
     // Ensure component is mounted before dependent rendering
     useEffect(() => { setMounted(true) }, [])
 
-    const [users, setUsers] = useState<UserType[]>(initialSystemUsers)
     const [searchTerm, setSearchTerm] = useState("")
 
     const [isDialogOpen, setIsDialogOpen] = useState(false)
     const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
-    const [userToDelete, setUserToDelete] = useState<number | null>(null)
+    const [userToDelete, setUserToDelete] = useState<string | null>(null)
 
     const form = useForm<UserFormValues>({
         resolver: zodResolver(userSchema) as any,
@@ -215,37 +201,34 @@ export default function SystemSettingsPage() {
         u.email.toLowerCase().includes(searchTerm.toLowerCase())
     )
 
-    const onSubmit = (data: UserFormValues) => {
-        const initials = data.name.split(" ").map(n => n[0]).join("").toUpperCase().substring(0, 2)
-        const newUser: UserType = {
-            id: users.length + 1,
-            name: data.name,
-            email: data.email,
-            role: data.role,
-            department: data.department,
-            status: data.status,
-            initials
+    const onSubmit = async (data: UserFormValues) => {
+        try {
+            await api.post("/api/Auth/register", {
+                firstName: data.name.split(" ")[0],
+                lastName: data.name.split(" ").slice(1).join(" "),
+                email: data.email,
+                password: "User123!", // Geçici şifre
+                department: data.department
+            });
+            toast.success("Yeni personel sisteme başarıyla davet edildi.");
+            setIsDialogOpen(false);
+            form.reset();
+        } catch (error) {
+            toast.error("Personel davet edilemedi.");
         }
-
-        setUsers([newUser, ...users])
-        toast.success("Yeni personel sisteme başarıyla davet edildi.")
-        setIsDialogOpen(false)
-        form.reset()
     }
 
-    const deleteUser = () => {
-        if (userToDelete !== null) {
-            setUsers(users.filter(u => u.id !== userToDelete))
-            toast.success("Personel silindi.")
+    const handleDeleteUser = async () => {
+        if (userToDelete) {
+            await deleteUser(userToDelete)
             setIsDeleteDialogOpen(false)
             setUserToDelete(null)
         }
     }
 
-    const toggleUserStatus = (id: number, currentStatus: string) => {
+    const toggleUserStatus = async (id: string, currentStatus: string) => {
         const newStatus = currentStatus === "Aktif" ? "Pasif" : "Aktif"
-        setUsers(users.map(u => u.id === id ? { ...u, status: newStatus } : u))
-        toast.success(`Personel durumu "${newStatus}" olarak güncellendi.`)
+        await updateStatus({ id, status: newStatus })
     }
 
     const onRoleSubmit = (data: RoleFormValues) => {
@@ -273,6 +256,14 @@ export default function SystemSettingsPage() {
             setIsDeleteRoleDialogOpen(false)
             setRoleToDelete(null)
         }
+    }
+
+    const getSettingValue = (key: string) => settings.find(s => s.key === key)?.value || ""
+
+    const toggleSetting = async (key: string, category: string, description: string) => {
+        const currentValue = getSettingValue(key)
+        const newValue = currentValue === "true" ? "false" : "true"
+        await saveSettings([{ key, value: newValue, category, description }])
     }
 
     return (
@@ -426,74 +417,87 @@ export default function SystemSettingsPage() {
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                    {filteredUsers.length > 0 ? (
-                                        filteredUsers.map((user) => (
-                                            <TableRow key={user.id} className="group hover:bg-muted/30 transition-colors">
-                                                <TableCell className="pl-6">
-                                                    <div className="flex items-center gap-3">
-                                                        <Avatar className="h-9 w-9 border hidden sm:flex group-hover:border-primary/50 transition-colors">
-                                                            <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold group-hover:bg-primary group-hover:text-primary-foreground transition-all">{user.initials}</AvatarFallback>
-                                                        </Avatar>
-                                                        <div className="flex flex-col">
-                                                            <span className="font-semibold text-sm group-hover:text-primary transition-colors">{user.name}</span>
-                                                            <span className="text-xs text-muted-foreground group-hover:text-foreground/80 transition-colors">{user.email}</span>
-                                                        </div>
-                                                    </div>
-                                                </TableCell>
-                                                <TableCell className="text-sm font-medium text-muted-foreground">
-                                                    {user.department}
-                                                </TableCell>
-                                                <TableCell>
-                                                    <Badge variant={user.role === "Super Admin" ? "default" : "secondary"} className="font-normal shadow-none">
-                                                        {user.role}
-                                                    </Badge>
-                                                </TableCell>
-                                                <TableCell>
-                                                    {user.status === "Aktif" ? (
-                                                        <div className="flex items-center gap-2 text-sm text-green-600 font-medium">
-                                                            <span className="h-2 w-2 rounded-full bg-green-600"></span>
-                                                            Aktif
-                                                        </div>
-                                                    ) : (
-                                                        <div className="flex items-center gap-2 text-sm text-muted-foreground font-medium">
-                                                            <span className="h-2 w-2 rounded-full bg-muted-foreground"></span>
-                                                            Pasif
-                                                        </div>
-                                                    )}
-                                                </TableCell>
-                                                <TableCell className="text-right pr-6">
-                                                    <DropdownMenu>
-                                                        <DropdownMenuTrigger asChild>
-                                                            <Button variant="ghost" className="h-8 w-8 p-0">
-                                                                <MoreHorizontal className="h-4 w-4" />
-                                                            </Button>
-                                                        </DropdownMenuTrigger>
-                                                        <DropdownMenuContent align="end">
-                                                            <DropdownMenuLabel>İşlemler</DropdownMenuLabel>
-                                                            <DropdownMenuItem>Bilgileri Düzenle</DropdownMenuItem>
-                                                            <DropdownMenuItem>Rol Değiştir</DropdownMenuItem>
-                                                            <DropdownMenuSeparator />
-                                                            <DropdownMenuItem
-                                                                className="cursor-pointer"
-                                                                onClick={() => toggleUserStatus(user.id, user.status)}
-                                                            >
-                                                                {user.status === "Aktif" ? "Kullanıcıyı Pasife Al" : "Kullanıcıyı Aktifleştir"}
-                                                            </DropdownMenuItem>
-                                                            <DropdownMenuSeparator />
-                                                            <DropdownMenuItem
-                                                                className="text-destructive focus:bg-destructive/10 cursor-pointer"
-                                                                onClick={() => {
-                                                                    setUserToDelete(user.id)
-                                                                    setIsDeleteDialogOpen(true)
-                                                                }}
-                                                            >
-                                                                Sistemden Sil
-                                                            </DropdownMenuItem>
-                                                        </DropdownMenuContent>
-                                                    </DropdownMenu>
-                                                </TableCell>
+                                    {usersLoading ? (
+                                        Array.from({ length: 5 }).map((_, i) => (
+                                            <TableRow key={i}>
+                                                <TableCell className="pl-6"><Skeleton className="h-10 w-40" /></TableCell>
+                                                <TableCell><Skeleton className="h-6 w-24" /></TableCell>
+                                                <TableCell><Skeleton className="h-6 w-32" /></TableCell>
+                                                <TableCell><Skeleton className="h-6 w-16" /></TableCell>
+                                                <TableCell className="text-right pr-6"><Skeleton className="h-8 w-8 ml-auto" /></TableCell>
                                             </TableRow>
                                         ))
+                                    ) : filteredUsers.length > 0 ? (
+                                        filteredUsers.map((user) => {
+                                            const initials = user.name.split(" ").map(n => n[0]).join("").toUpperCase().substring(0, 2)
+                                            return (
+                                                <TableRow key={user.id} className="group hover:bg-muted/30 transition-colors">
+                                                    <TableCell className="pl-6">
+                                                        <div className="flex items-center gap-3">
+                                                            <Avatar className="h-9 w-9 border hidden sm:flex group-hover:border-primary/50 transition-colors">
+                                                                <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold group-hover:bg-primary group-hover:text-primary-foreground transition-all">{initials}</AvatarFallback>
+                                                            </Avatar>
+                                                            <div className="flex flex-col">
+                                                                <span className="font-semibold text-sm group-hover:text-primary transition-colors">{user.name}</span>
+                                                                <span className="text-xs text-muted-foreground group-hover:text-foreground/80 transition-colors">{user.email}</span>
+                                                            </div>
+                                                        </div>
+                                                    </TableCell>
+                                                    <TableCell className="text-sm font-medium text-muted-foreground">
+                                                        {user.department || "-"}
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <Badge variant={user.role === "Super Admin" || user.role === "admin" ? "default" : "secondary"} className="font-normal shadow-none">
+                                                            {user.role}
+                                                        </Badge>
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        {user.status === "Aktif" ? (
+                                                            <div className="flex items-center gap-2 text-sm text-green-600 font-medium">
+                                                                <span className="h-2 w-2 rounded-full bg-green-600"></span>
+                                                                Aktif
+                                                            </div>
+                                                        ) : (
+                                                            <div className="flex items-center gap-2 text-sm text-muted-foreground font-medium">
+                                                                <span className="h-2 w-2 rounded-full bg-muted-foreground"></span>
+                                                                Pasif
+                                                            </div>
+                                                        )}
+                                                    </TableCell>
+                                                    <TableCell className="text-right pr-6">
+                                                        <DropdownMenu>
+                                                            <DropdownMenuTrigger asChild>
+                                                                <Button variant="ghost" className="h-8 w-8 p-0">
+                                                                    <MoreHorizontal className="h-4 w-4" />
+                                                                </Button>
+                                                            </DropdownMenuTrigger>
+                                                            <DropdownMenuContent align="end">
+                                                                <DropdownMenuLabel>İşlemler</DropdownMenuLabel>
+                                                                <DropdownMenuItem>Bilgileri Düzenle</DropdownMenuItem>
+                                                                <DropdownMenuItem>Rol Değiştir</DropdownMenuItem>
+                                                                <DropdownMenuSeparator />
+                                                                <DropdownMenuItem
+                                                                    className="cursor-pointer"
+                                                                    onClick={() => toggleUserStatus(user.id, user.status)}
+                                                                >
+                                                                    {user.status === "Aktif" ? "Kullanıcıyı Pasife Al" : "Kullanıcıyı Aktifleştir"}
+                                                                </DropdownMenuItem>
+                                                                <DropdownMenuSeparator />
+                                                                <DropdownMenuItem
+                                                                    className="text-destructive focus:bg-destructive/10 cursor-pointer"
+                                                                    onClick={() => {
+                                                                        setUserToDelete(user.id)
+                                                                        setIsDeleteDialogOpen(true)
+                                                                    }}
+                                                                >
+                                                                    Sistemden Sil
+                                                                </DropdownMenuItem>
+                                                            </DropdownMenuContent>
+                                                        </DropdownMenu>
+                                                    </TableCell>
+                                                </TableRow>
+                                            )
+                                        })
                                     ) : (
                                         <TableRow>
                                             <TableCell colSpan={5} className="h-48 text-center text-muted-foreground">
@@ -636,7 +640,11 @@ export default function SystemSettingsPage() {
                                     <label className="text-base font-medium flex items-center gap-2"><Smartphone className="h-4 w-4" /> İki Aşamalı Doğrulama (2FA) Zorunluluğu</label>
                                     <p className="text-sm text-muted-foreground">Tüm aktif personel girişte SMS/Authenticator kullanmaya zorlanacaktır.</p>
                                 </div>
-                                <Switch disabled />
+                                <Switch
+                                    disabled={settingsLoading}
+                                    checked={getSettingValue("Security_2FA_Enabled") === "true"}
+                                    onCheckedChange={() => toggleSetting("Security_2FA_Enabled", "Security", "İki Aşamalı Doğrulama (2FA) durumu")}
+                                />
                             </div>
                             <Separator />
                             <div className="flex items-center justify-between">
@@ -644,7 +652,11 @@ export default function SystemSettingsPage() {
                                     <label className="text-base font-medium flex items-center gap-2"><Key className="h-4 w-4" /> Güçlü Şifre Politikası</label>
                                     <p className="text-sm text-muted-foreground">Şifreler en az 8 karakter, 1 büyük harf ve 1 özel karakter içermelidir.</p>
                                 </div>
-                                <Switch defaultChecked />
+                                <Switch
+                                    disabled={settingsLoading}
+                                    checked={getSettingValue("Security_StrongPassword_Required") === "true"}
+                                    onCheckedChange={() => toggleSetting("Security_StrongPassword_Required", "Security", "Güçlü şifre politikası")}
+                                />
                             </div>
                             <Separator />
                             <div className="flex items-center justify-between">
@@ -652,7 +664,11 @@ export default function SystemSettingsPage() {
                                     <label className="text-base font-medium">Oturum Zaman Aşımı (Session Timeout)</label>
                                     <p className="text-sm text-muted-foreground">Kullanıcı 30 dakika işlem yapmazsa sistemden otomatik çıkış yapılsın.</p>
                                 </div>
-                                <Switch defaultChecked />
+                                <Switch
+                                    disabled={settingsLoading}
+                                    checked={getSettingValue("Security_SessionTimeout_Minutes") !== "0"}
+                                    onCheckedChange={() => toggleSetting("Security_SessionTimeout_Minutes", "Security", "Oturum zaman aşımı süresi")}
+                                />
                             </div>
                         </CardContent>
                     </Card>
@@ -750,21 +766,32 @@ export default function SystemSettingsPage() {
                                         <h5 className="font-medium text-sm">Yeni Müşteri (Lead) Kayıt Bildirimi</h5>
                                         <p className="text-xs text-muted-foreground mt-1">Sisteme yeni bir müşteri eklendiğinde Satış ekibine mail atılır.</p>
                                     </div>
-                                    <Switch defaultChecked />
+                                    <Switch
+                                        disabled={settingsLoading}
+                                        checked={getSettingValue("Notify_NewLead_Email") === "true"}
+                                        onCheckedChange={() => toggleSetting("Notify_NewLead_Email", "Notification", "Yeni müşteri kayıt bildirimi")}
+                                    />
                                 </div>
                                 <div className="flex items-center justify-between p-4 border rounded-lg bg-muted/10">
                                     <div>
                                         <h5 className="font-medium text-sm">Kazanılan Fırsat (Won Deal)</h5>
                                         <p className="text-xs text-muted-foreground mt-1">Pipeline'da fırsat kazanıldı statüsüne geçerse tüm yönetimi bilgilendir.</p>
                                     </div>
-                                    <Switch defaultChecked />
+                                    <Switch
+                                        disabled={settingsLoading}
+                                        checked={getSettingValue("Notify_WonDeal_Management") === "true"}
+                                        onCheckedChange={() => toggleSetting("Notify_WonDeal_Management", "Notification", "Kazanılan fırsat bildirimi")}
+                                    />
                                 </div>
                                 <div className="flex items-center justify-between p-4 border rounded-lg bg-muted/10">
                                     <div>
                                         <h5 className="font-medium text-sm">Finansal Limit Alarmı</h5>
                                         <p className="text-xs text-muted-foreground mt-1">Nakit girişi/çıkışı belirlenen eşiklerin üzerine çıktığında finans yetkilisine haber ver.</p>
                                     </div>
-                                    <Switch defaultChecked />
+                                    <Switch
+                                        disabled={settingsLoading}
+                                        defaultChecked
+                                    />
                                 </div>
                             </div>
                         </CardContent>
@@ -783,7 +810,7 @@ export default function SystemSettingsPage() {
                     </AlertDialogHeader>
                     <AlertDialogFooter>
                         <AlertDialogCancel>Vazgeç</AlertDialogCancel>
-                        <AlertDialogAction onClick={deleteUser} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Kullanıcıyı Sil</AlertDialogAction>
+                        <AlertDialogAction onClick={handleDeleteUser} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Kullanıcıyı Sil</AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>

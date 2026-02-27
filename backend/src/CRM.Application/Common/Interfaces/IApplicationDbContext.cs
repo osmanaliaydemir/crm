@@ -40,6 +40,7 @@ public interface IApplicationDbContext
     DbSet<Notification> Notifications { get; }
     DbSet<Announcement> Announcements { get; }
     DbSet<AuditLog> AuditLogs { get; }
+    DbSet<SystemSetting> SystemSettings { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken);
 }

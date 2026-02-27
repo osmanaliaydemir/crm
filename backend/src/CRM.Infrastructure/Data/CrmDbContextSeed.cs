@@ -440,6 +440,20 @@ public static class CrmDbContextSeed
             context.Announcements.AddRange(a1, a2);
             await context.SaveChangesAsync();
         }
+
+        if (!context.SystemSettings.Any())
+        {
+            context.SystemSettings.AddRange(
+                new SystemSetting { Id = Guid.NewGuid(), Key = "Security_2FA_Enabled", Value = "false", Category = "Security", Description = "İki Aşamalı Doğrulama (2FA) durumu" },
+                new SystemSetting { Id = Guid.NewGuid(), Key = "Security_StrongPassword_Required", Value = "true", Category = "Security", Description = "Güçlü şifre politikası" },
+                new SystemSetting { Id = Guid.NewGuid(), Key = "Security_SessionTimeout_Minutes", Value = "30", Category = "Security", Description = "Oturum zaman aşımı süresi" },
+                new SystemSetting { Id = Guid.NewGuid(), Key = "Notify_NewLead_Email", Value = "true", Category = "Notification", Description = "Yeni müşteri kayıt bildirimi" },
+                new SystemSetting { Id = Guid.NewGuid(), Key = "Notify_WonDeal_Management", Value = "true", Category = "Notification", Description = "Kazanılan fırsat bildirimi" },
+                new SystemSetting { Id = Guid.NewGuid(), Key = "Appearance_ThemeMode", Value = "system", Category = "Appearance", Description = "Sistem tema modu" },
+                new SystemSetting { Id = Guid.NewGuid(), Key = "Appearance_PrimaryColor", Value = "blue", Category = "Appearance", Description = "Kurumsal ana renk" }
+            );
+            await context.SaveChangesAsync();
+        }
     }
 
     private static string HashPassword(string password)
