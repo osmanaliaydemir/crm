@@ -42,7 +42,9 @@ import {
 } from "lucide-react"
 
 import { useAuthStore } from "@/store/authStore"
-import { useAnnouncementStore } from "@/store/announcementStore"
+import { useActiveAnnouncements } from "@/lib/hooks/useAnnouncementQueries"
+import { formatDistanceToNow } from "date-fns"
+import { tr } from "date-fns/locale"
 import { LeaveType } from "@/store/leaveStore"
 import { ExpenseCategory } from "@/store/expenseStore"
 import { useMyLeaves, useCreateLeave, useMyExpenses, useCreateExpense } from "@/hooks/api/use-hr"
@@ -87,7 +89,15 @@ const employeeKpis = [
 
 export default function EmployeePortalPage() {
     const { user } = useAuthStore()
-    const { announcements } = useAnnouncementStore()
+    const { data: announcements = [] } = useActiveAnnouncements()
+
+    const formatTime = (dateStr: string) => {
+        try {
+            return formatDistanceToNow(new Date(dateStr), { addSuffix: true, locale: tr })
+        } catch {
+            return dateStr
+        }
+    }
 
     // API Hooks
     const { data: myLeaves = [], isLoading: isLoadingLeaves } = useMyLeaves()
@@ -112,9 +122,6 @@ export default function EmployeePortalPage() {
         description: "",
         date: new Date().toISOString().split('T')[0]
     })
-
-    // Filters
-    const activeAnnouncements = announcements.filter(a => a.isActive)
 
     const handleLeaveSubmit = () => {
         if (!leaveFormData.startDate || !leaveFormData.endDate) {
@@ -456,20 +463,20 @@ export default function EmployeePortalPage() {
                         </CardHeader>
                         <CardContent className="px-4">
                             <div className="space-y-4">
-                                {activeAnnouncements.length === 0 ? (
+                                {announcements.length === 0 ? (
                                     <div className="text-center py-6 text-muted-foreground text-sm">
                                         <BellRing className="h-6 w-6 mx-auto mb-2 opacity-20" />
                                         Yayında olan bir duyuru bulunmuyor.
                                     </div>
                                 ) : (
-                                    activeAnnouncements.map((ann) => (
+                                    announcements.map((ann: any) => (
                                         <div key={ann.id} className="flex flex-col gap-1 pb-4 border-b last:border-0 last:pb-0">
-                                            <span className={`text-[10px] font-bold uppercase tracking-wider ${ann.type === 'Acil' ? 'text-red-500' :
-                                                ann.type === 'Finans' ? 'text-emerald-500' :
-                                                    ann.type === 'Sistem' ? 'text-blue-500' :
+                                            <span className={`text-[10px] font-bold uppercase tracking-wider ${ann.typeName === 'Acil' ? 'text-red-500' :
+                                                ann.typeName === 'Finans' ? 'text-emerald-500' :
+                                                    ann.typeName === 'Sistem' ? 'text-blue-500' :
                                                         'text-primary'
                                                 }`}>
-                                                {ann.type}
+                                                {ann.typeName}
                                             </span>
                                             <span className="font-semibold leading-tight text-sm">
                                                 {ann.title}
@@ -477,7 +484,7 @@ export default function EmployeePortalPage() {
                                             <span className="text-[11px] text-muted-foreground mt-0.5 whitespace-pre-wrap">
                                                 {ann.content}
                                             </span>
-                                            <span className="text-[10px] text-muted-foreground/60 mt-1">{ann.date}</span>
+                                            <span className="text-[10px] text-muted-foreground/60 mt-1">{formatTime(ann.createdAt)}</span>
                                         </div>
                                     ))
                                 )}

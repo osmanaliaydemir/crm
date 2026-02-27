@@ -35,9 +35,17 @@ import {
 } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
 import { toast } from "sonner"
-import { useAnnouncementStore, AnnouncementType } from "@/store/announcementStore"
+import {
+    useAllAnnouncements,
+    useCreateAnnouncement,
+    useDeleteAnnouncement,
+    useToggleAnnouncementStatus
+} from "@/lib/hooks/useAnnouncementQueries"
 import { useLeaveStore, LeaveStatus, LeaveType as LeaveRequestType } from "@/store/leaveStore"
-import { useExpenses, useUpdateExpenseStatus } from "@/hooks/api/use-hr"
+import { useExpenses, useUpdateExpenseStatus, useLeaves, useUpdateLeaveStatus, usePayrolls, useUpdatePayrollStatus, usePerformanceEvaluations } from "@/hooks/api/use-hr"
+import { useUsers } from "@/hooks/api/use-users"
+import { formatDistanceToNow } from "date-fns"
+import { tr } from "date-fns/locale"
 import { TableSkeleton } from "@/components/skeletons"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
@@ -89,22 +97,23 @@ import {
 
 // --- Mock Data ---
 
-const hrKpis = [
+// KPI Verileri (Dinamikleştirilecek olanlar)
+const getHrKpis = (empCount: number, leaveCount: number, performanceAvg: number) => [
     {
         title: "Toplam Personel",
-        value: "124",
-        description: "+3 geçen aya göre",
+        value: empCount.toString(),
+        description: "Aktif çalışan sayısı",
         icon: Users,
         color: "text-blue-500",
-        trendData: [{ value: 118 }, { value: 120 }, { value: 121 }, { value: 121 }, { value: 121 }, { value: 124 }]
+        trendData: [{ value: 118 }, { value: 120 }, { value: 121 }, { value: 121 }, { value: 121 }, { value: empCount }]
     },
     {
         title: "İzindeki Personel",
-        value: "8",
-        description: "-2 geçen aya göre",
+        value: leaveCount.toString(),
+        description: "Şu an izinde olanlar",
         icon: CalendarOff,
         color: "text-emerald-500",
-        trendData: [{ value: 12 }, { value: 15 }, { value: 10 }, { value: 14 }, { value: 10 }, { value: 8 }]
+        trendData: [{ value: 12 }, { value: 15 }, { value: 10 }, { value: 14 }, { value: 10 }, { value: leaveCount }]
     },
     {
         title: "Açık Pozisyonlar",
@@ -116,11 +125,11 @@ const hrKpis = [
     },
     {
         title: "Ort. Performans Puanı",
-        value: "8.4",
-        description: "+0.2 geçen döneme göre",
+        value: performanceAvg.toFixed(1),
+        description: "Genel yetkinlik skoru",
         icon: TrendingUp,
         color: "text-orange-500",
-        trendData: [{ value: 8.0 }, { value: 8.1 }, { value: 8.2 }, { value: 8.1 }, { value: 8.2 }, { value: 8.4 }]
+        trendData: [{ value: 8.0 }, { value: 8.1 }, { value: 8.2 }, { value: 8.1 }, { value: 8.2 }, { value: performanceAvg }]
     },
 ]
 
@@ -145,24 +154,39 @@ const initialEmployees: Employee[] = [
 ]
 
 export default function HRPage() {
-    const [employees, setEmployees] = useState<Employee[]>(initialEmployees)
     const [searchTerm, setSearchTerm] = useState("")
 
-    // Announcement State
-    const { announcements, addAnnouncement, deleteAnnouncement, toggleAnnouncementStatus } = useAnnouncementStore()
+    const formatTime = (dateStr: string) => {
+        try {
+            return formatDistanceToNow(new Date(dateStr), { addSuffix: true, locale: tr })
+        } catch {
+            return dateStr
+        }
+    }
+
+    // Announcement API Hooks
+    const { data: announcements = [] } = useAllAnnouncements()
+    const { mutate: addAnnouncement } = useCreateAnnouncement()
+    const { mutate: deleteAnnouncement } = useDeleteAnnouncement()
+    const { mutate: toggleAnnouncementStatus } = useToggleAnnouncementStatus()
+
     const [isAnnouncementDialogOpen, setIsAnnouncementDialogOpen] = useState(false)
     const [newAnnouncement, setNewAnnouncement] = useState({
         title: "",
         content: "",
-        type: "Genel" as AnnouncementType
+        type: "Genel" as string
     })
 
-    // Leave State
-    const { leaveRequests, updateLeaveStatus } = useLeaveStore()
-
-    // Expense API Hooks
+    // --- API Hookları ---
+    const { data: employeesData = [], isLoading: isLoadingUsers } = useUsers()
+    const { data: leaves = [], isLoading: isLoadingLeaves } = useLeaves()
+    const { data: payrolls = [], isLoading: isLoadingPayrolls } = usePayrolls()
+    const { data: evaluations = [], isLoading: isLoadingEvals } = usePerformanceEvaluations()
     const { data: expenses = [], isLoading: isLoadingExpenses } = useExpenses()
+
+    const { mutate: updateLeaveStatus } = useUpdateLeaveStatus()
     const { mutate: updateExpenseStatus } = useUpdateExpenseStatus()
+    const { mutate: updatePayrollStatus } = useUpdatePayrollStatus()
 
     // Employee Form State
     const [isEmployeeDialogOpen, setIsEmployeeDialogOpen] = useState(false)
@@ -175,19 +199,32 @@ export default function HRPage() {
         status: "active"
     })
 
+    const employees = employeesData.map((u: any) => ({
+        id: u.id,
+        name: u.name,
+        email: u.email,
+        department: u.department || "Departman Belirtilmedi",
+        role: u.role || "Çalışan",
+        status: (u.status || "active") as any,
+        phone: u.phoneNumber || ""
+    }))
+
+    const hrKpis = getHrKpis(
+        employees.length,
+        leaves.filter((l: any) => l.status === "Onaylandı").length,
+        evaluations.length > 0 ? evaluations.reduce((acc: number, cur: any) => acc + cur.score, 0) / evaluations.length : 8.5
+    )
+
     const handleCreateEmployee = () => {
         if (!newEmployeeData.name || !newEmployeeData.email) {
             toast.error("Lütfen ad ve e-posta alanlarını doldurun.")
             return;
         }
 
-        const newId = `EMP-${String(employees.length + 1).padStart(3, '0')}`
-        const employeeToAdd: Employee = {
-            ...newEmployeeData,
-            id: newId
-        }
-
-        setEmployees([employeeToAdd, ...employees])
+        // TODO: Implement create employee mutation
+        toast.info("Yeni personel kaydı API üzerinden oluşturulmalıdır.", {
+            description: "Bu işlem şimdilik simüle edildi. Kullanıcı yönetimi modülünü kullanın."
+        })
         setIsEmployeeDialogOpen(false)
         setNewEmployeeData({
             name: "",
@@ -197,9 +234,6 @@ export default function HRPage() {
             role: "",
             status: "active"
         })
-        toast.success("Yeni personel kaydı oluşturuldu.", {
-            description: `${newEmployeeData.name} sisteme başarıyla eklendi.`
-        })
     }
 
     const handleCreateAnnouncement = () => {
@@ -208,13 +242,16 @@ export default function HRPage() {
             return;
         }
 
-        addAnnouncement(newAnnouncement)
-        setNewAnnouncement({ title: "", content: "", type: "Genel" })
-        setIsAnnouncementDialogOpen(false)
-        toast.success("Duyuru başarıyla yayınlandı!")
+        addAnnouncement(newAnnouncement, {
+            onSuccess: () => {
+                setNewAnnouncement({ title: "", content: "", type: "Genel" })
+                setIsAnnouncementDialogOpen(false)
+                toast.success("Duyuru başarıyla yayınlandı!")
+            }
+        })
     }
 
-    const filteredEmployees = employees.filter(emp =>
+    const filteredEmployees = employees.filter((emp: any) =>
         emp.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         emp.department.toLowerCase().includes(searchTerm.toLowerCase())
     )
@@ -363,13 +400,14 @@ export default function HRPage() {
 
             {/* Main Content Tabs */}
             <Tabs defaultValue="employees" className="w-full max-w-full">
-                <TabsList className="grid w-full grid-cols-6 max-w-3xl h-10 bg-muted/50 border border-sidebar-border/30">
+                <TabsList className="grid w-full grid-cols-7 max-w-4xl h-10 bg-muted/50 border border-sidebar-border/30">
                     <TabsTrigger value="employees">Personel Listesi</TabsTrigger>
                     <TabsTrigger value="leaves" className="gap-2">İzin Takibi</TabsTrigger>
                     <TabsTrigger value="expenses" className="gap-2">Masraf Yönetimi</TabsTrigger>
+                    <TabsTrigger value="payrolls">Bordro</TabsTrigger>
                     <TabsTrigger value="org-chart" className="gap-2">Org. Şeması</TabsTrigger>
                     <TabsTrigger value="performance">Performans</TabsTrigger>
-                    <TabsTrigger value="announcements">Duyurular (Yönetim)</TabsTrigger>
+                    <TabsTrigger value="announcements">Duyurular</TabsTrigger>
                 </TabsList>
 
                 {/* Employees Tab */}
@@ -460,6 +498,66 @@ export default function HRPage() {
                                     )}
                                 </TableBody>
                             </Table>
+                        </CardContent>
+                    </Card>
+                </TabsContent>
+
+                {/* Leaves Tab */}
+                <TabsContent value="leaves" className="mt-6 w-full min-w-0">
+                    <Card className="bg-background/50 backdrop-blur-xl border-sidebar-border/50 shadow-sm w-full overflow-hidden">
+                        <CardHeader className="flex flex-col sm:flex-row items-center justify-between gap-4 pb-4 border-b">
+                            <div>
+                                <CardTitle className="text-lg flex items-center gap-2">
+                                    <Clock className="h-5 w-5 text-amber-500" />
+                                    İzin Talepleri ve Onaylar
+                                </CardTitle>
+                                <p className="text-sm text-muted-foreground mt-1">Personellerin yıllık ve özel izin taleplerini buradan yönetin.</p>
+                            </div>
+                        </CardHeader>
+                        <CardContent className="p-0">
+                            <div className="overflow-x-auto">
+                                <Table className="w-full min-w-[800px]">
+                                    <TableHeader className="bg-muted/30">
+                                        <TableRow>
+                                            <TableHead className="pl-6">Personel</TableHead>
+                                            <TableHead>İzin Tipi</TableHead>
+                                            <TableHead>Tarih Aralığı</TableHead>
+                                            <TableHead>Durum</TableHead>
+                                            <TableHead className="text-right pr-6">İşlemler</TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {isLoadingLeaves ? (
+                                            <TableRow><TableCell colSpan={5} className="text-center py-10"><TableSkeleton /></TableCell></TableRow>
+                                        ) : (leaves?.length || 0) === 0 ? (
+                                            <TableRow><TableCell colSpan={5} className="text-center py-10 text-muted-foreground">İzin talebi bulunmuyor.</TableCell></TableRow>
+                                        ) : (
+                                            leaves.map((leave: any) => (
+                                                <TableRow key={leave.id}>
+                                                    <TableCell className="pl-6 font-medium">{leave.employeeName}</TableCell>
+                                                    <TableCell>{leave.leaveType}</TableCell>
+                                                    <TableCell className="text-xs">
+                                                        {new Date(leave.startDate).toLocaleDateString("tr-TR")} - {new Date(leave.endDate).toLocaleDateString("tr-TR")}
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <Badge variant="outline" className={leave.status === "Onaylandı" ? "bg-emerald-500/10 text-emerald-500" : "bg-amber-500/10 text-amber-500"}>
+                                                            {leave.status}
+                                                        </Badge>
+                                                    </TableCell>
+                                                    <TableCell className="text-right pr-6">
+                                                        {leave.status === "Bekliyor" && (
+                                                            <div className="flex justify-end gap-2">
+                                                                <Button size="icon" variant="ghost" className="h-8 w-8 text-red-500" onClick={() => updateLeaveStatus({ id: leave.id, status: "Reddedildi" })}><X className="h-4 w-4" /></Button>
+                                                                <Button size="icon" variant="ghost" className="h-8 w-8 text-emerald-500" onClick={() => updateLeaveStatus({ id: leave.id, status: "Onaylandı" })}><Check className="h-4 w-4" /></Button>
+                                                            </div>
+                                                        )}
+                                                    </TableCell>
+                                                </TableRow>
+                                            ))
+                                        )}
+                                    </TableBody>
+                                </Table>
+                            </div>
                         </CardContent>
                     </Card>
                 </TabsContent>
@@ -600,6 +698,61 @@ export default function HRPage() {
                     </Card>
                 </TabsContent>
 
+                {/* Payrolls Tab */}
+                <TabsContent value="payrolls" className="mt-6 w-full min-w-0">
+                    <Card className="bg-background/50 backdrop-blur-xl border-sidebar-border/50 shadow-sm w-full overflow-hidden">
+                        <CardHeader className="flex flex-col sm:flex-row items-center justify-between gap-4 pb-4 border-b">
+                            <div>
+                                <CardTitle className="text-lg flex items-center gap-2">
+                                    <DollarSign className="h-5 w-5 text-indigo-500" />
+                                    Bordro ve Maaş Yönetimi
+                                </CardTitle>
+                                <p className="text-sm text-muted-foreground mt-1">Hak edişleri inceleyin ve ödeme durumlarını güncelleyin.</p>
+                            </div>
+                        </CardHeader>
+                        <CardContent className="p-0">
+                            <div className="overflow-x-auto">
+                                <Table className="w-full min-w-[800px]">
+                                    <TableHeader className="bg-muted/30">
+                                        <TableRow>
+                                            <TableHead className="pl-6">Personel</TableHead>
+                                            <TableHead>Dönem</TableHead>
+                                            <TableHead>Net Maaş</TableHead>
+                                            <TableHead>Durum</TableHead>
+                                            <TableHead className="text-right pr-6">İşlemler</TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {isLoadingPayrolls ? (
+                                            <TableRow><TableCell colSpan={5} className="text-center py-10"><TableSkeleton /></TableCell></TableRow>
+                                        ) : (payrolls?.length || 0) === 0 ? (
+                                            <TableRow><TableCell colSpan={5} className="text-center py-10 text-muted-foreground">Bordro kaydı bulunmuyor.</TableCell></TableRow>
+                                        ) : (
+                                            payrolls.map((p: any) => (
+                                                <TableRow key={p.id}>
+                                                    <TableCell className="pl-6 font-medium">{p.employeeName}</TableCell>
+                                                    <TableCell>{p.period}</TableCell>
+                                                    <TableCell className="font-bold">₺{p.netSalary.toLocaleString()}</TableCell>
+                                                    <TableCell>
+                                                        <Badge className={p.status === "Ödendi" ? "bg-emerald-500/10 text-emerald-500" : "bg-amber-500/10 text-amber-500"}>
+                                                            {p.status}
+                                                        </Badge>
+                                                    </TableCell>
+                                                    <TableCell className="text-right pr-6">
+                                                        {p.status !== "Ödendi" && (
+                                                            <Button size="sm" onClick={() => updatePayrollStatus({ id: p.id, status: "Ödendi", paymentDate: new Date().toISOString() })}>Ödendi İşaretle</Button>
+                                                        )}
+                                                    </TableCell>
+                                                </TableRow>
+                                            ))
+                                        )}
+                                    </TableBody>
+                                </Table>
+                            </div>
+                        </CardContent>
+                    </Card>
+                </TabsContent>
+
                 {/* Org Chart Tab */}
                 <TabsContent value="org-chart" className="mt-6 w-full min-w-0">
                     <Card className="bg-background/50 backdrop-blur-xl border-sidebar-border/50 shadow-sm w-full overflow-hidden">
@@ -695,52 +848,47 @@ export default function HRPage() {
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
-                                        {employees.slice(0, 5).map((emp, i) => (
-                                            <TableRow key={emp.id} className="group">
-                                                <TableCell className="pl-6">
-                                                    <div className="flex items-center gap-3">
-                                                        <Avatar className="h-8 w-8">
-                                                            <AvatarImage src={`https://api.dicebear.com/7.x/initials/svg?seed=${emp.name}`} />
-                                                            <AvatarFallback>{emp.name.substring(0, 2)}</AvatarFallback>
-                                                        </Avatar>
-                                                        <div className="flex flex-col">
-                                                            <span className="text-sm font-semibold">{emp.name}</span>
-                                                            <span className="text-[10px] text-muted-foreground">{emp.role}</span>
+                                        {isLoadingEvals ? (
+                                            <TableRow><TableCell colSpan={5} className="text-center"><TableSkeleton /></TableCell></TableRow>
+                                        ) : evaluations.length === 0 ? (
+                                            <TableRow><TableCell colSpan={5} className="text-center py-10 text-muted-foreground">Değerlendirme bulunmuyor.</TableCell></TableRow>
+                                        ) : (
+                                            evaluations.map((evalItem: any) => (
+                                                <TableRow key={evalItem.id} className="group">
+                                                    <TableCell className="pl-6">
+                                                        <div className="flex items-center gap-3">
+                                                            <Avatar className="h-8 w-8">
+                                                                <AvatarFallback>{evalItem.employeeName.substring(0, 2)}</AvatarFallback>
+                                                            </Avatar>
+                                                            <div className="flex flex-col">
+                                                                <span className="text-sm font-semibold">{evalItem.employeeName}</span>
+                                                                <span className="text-[10px] text-muted-foreground">Dönem: {evalItem.period}</span>
+                                                            </div>
                                                         </div>
-                                                    </div>
-                                                </TableCell>
-                                                <TableCell>
-                                                    <div className="flex items-center gap-1">
-                                                        {[1, 2, 3, 4, 5].map((star) => (
-                                                            <Star
-                                                                key={star}
-                                                                className={`h-3 w-3 ${star <= (i % 2 === 0 ? 5 : 4) ? 'text-amber-500 fill-amber-500' : 'text-muted'}`}
-                                                            />
-                                                        ))}
-                                                        <span className="ml-2 text-xs font-bold text-amber-600">{(i % 2 === 0 ? 5.0 : 4.2).toFixed(1)}</span>
-                                                    </div>
-                                                </TableCell>
-                                                <TableCell>
-                                                    <div className="flex flex-col gap-1 w-24">
-                                                        <div className="flex justify-between text-[10px]">
-                                                            <span>%{i % 2 === 0 ? 95 : 82}</span>
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <div className="flex items-center gap-1">
+                                                            {[1, 2, 3, 4, 5].map((star) => (
+                                                                <Star
+                                                                    key={star}
+                                                                    className={`h-3 w-3 ${star <= (evalItem.score / 20) ? 'text-amber-500 fill-amber-500' : 'text-muted'}`}
+                                                                />
+                                                            ))}
+                                                            <span className="ml-2 text-xs font-bold text-amber-600">{(evalItem.score / 20).toFixed(1)}</span>
                                                         </div>
-                                                        <div className="h-1 w-full bg-muted rounded-full overflow-hidden">
-                                                            <div
-                                                                className={`h-full ${i % 2 === 0 ? 'bg-emerald-500' : 'bg-blue-500'}`}
-                                                                style={{ width: `${i % 2 === 0 ? 95 : 82}%` }}
-                                                            />
-                                                        </div>
-                                                    </div>
-                                                </TableCell>
-                                                <TableCell className="text-xs text-muted-foreground">
-                                                    15 Ocak 2026
-                                                </TableCell>
-                                                <TableCell className="text-right pr-6">
-                                                    <Button variant="ghost" size="sm" className="h-8 text-xs">Detaylar</Button>
-                                                </TableCell>
-                                            </TableRow>
-                                        ))}
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <span className="text-xs">{evalItem.feedback}</span>
+                                                    </TableCell>
+                                                    <TableCell className="text-xs text-muted-foreground">
+                                                        {new Date(evalItem.evaluationDate).toLocaleDateString("tr-TR")}
+                                                    </TableCell>
+                                                    <TableCell className="text-right pr-6">
+                                                        <Button variant="ghost" size="sm" className="h-8 text-xs">Detaylar</Button>
+                                                    </TableCell>
+                                                </TableRow>
+                                            ))
+                                        )}
                                     </TableBody>
                                 </Table>
                             </div>
@@ -787,7 +935,7 @@ export default function HRPage() {
                                             <Label htmlFor="type">Kategori</Label>
                                             <Select
                                                 value={newAnnouncement.type}
-                                                onValueChange={(val) => setNewAnnouncement({ ...newAnnouncement, type: val as AnnouncementType })}
+                                                onValueChange={(val) => setNewAnnouncement({ ...newAnnouncement, type: val as string })}
                                             >
                                                 <SelectTrigger id="type">
                                                     <SelectValue placeholder="Kategori Seçin" />
@@ -839,18 +987,18 @@ export default function HRPage() {
                                                 </TableCell>
                                             </TableRow>
                                         ) : (
-                                            announcements.map((ann) => (
+                                            announcements.map((ann: any) => (
                                                 <TableRow key={ann.id} className="hover:bg-muted/30 transition-colors">
                                                     <TableCell className="pl-6 align-top pt-4">
                                                         <div className="flex flex-col gap-1">
-                                                            <Badge variant="outline" className={`w-fit font-semibold ${ann.type === 'Acil' ? 'bg-red-500/10 text-red-500 border-red-500/20' :
-                                                                ann.type === 'Finans' ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' :
-                                                                    ann.type === 'Sistem' ? 'bg-blue-500/10 text-blue-500 border-blue-500/20' :
+                                                            <Badge variant="outline" className={`w-fit font-semibold ${ann.typeName === 'Acil' ? 'bg-red-500/10 text-red-500 border-red-500/20' :
+                                                                ann.typeName === 'Finans' ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' :
+                                                                    ann.typeName === 'Sistem' ? 'bg-blue-500/10 text-blue-500 border-blue-500/20' :
                                                                         'bg-primary/10 text-primary border-primary/20'
                                                                 }`}>
-                                                                {ann.type}
+                                                                {ann.typeName}
                                                             </Badge>
-                                                            <span className="text-xs text-muted-foreground font-medium mt-1">{ann.date}</span>
+                                                            <span className="text-xs text-muted-foreground font-medium mt-1">{formatTime(ann.createdAt)}</span>
                                                         </div>
                                                     </TableCell>
                                                     <TableCell className="align-top pt-4 overflow-hidden">
@@ -884,8 +1032,10 @@ export default function HRPage() {
                                                             size="icon"
                                                             className="h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive transition-colors"
                                                             onClick={() => {
-                                                                deleteAnnouncement(ann.id);
-                                                                toast("Duyuru silindi.");
+                                                                if (confirm("Duyuruyu silmek istediğinize emin misiniz?")) {
+                                                                    deleteAnnouncement(ann.id);
+                                                                    toast.success("Duyuru silindi.");
+                                                                }
                                                             }}
                                                             title="Sistemden Tamamen Sil"
                                                         >

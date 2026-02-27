@@ -19,25 +19,36 @@ import {
     Phone
 } from "lucide-react"
 
-const customerKpis = [
-    { title: "Toplam Sipariş", value: "12", icon: Package, color: "text-blue-500", description: "+2 bu ay", trendData: [{ value: 10 }, { value: 15 }, { value: 12 }] },
-    { title: "Bekleyen Ödeme", value: "₺24.500", icon: CreditCard, color: "text-rose-500", description: "Vadesi gelmiş", trendData: [{ value: 5 }, { value: 8 }, { value: 24 }] },
-    { title: "Yoldaki Kargo", value: "3", icon: Truck, color: "text-emerald-500", description: "Tahmini 2 gün", trendData: [{ value: 1 }, { value: 2 }, { value: 3 }] },
-    { title: "Destek Talebi", value: "0", icon: MessageSquare, color: "text-amber-500", description: "Hepsi kapalı", trendData: [{ value: 0 }, { value: 0 }, { value: 0 }] },
-]
+import { usePortalSummary, usePortalOrders, usePortalInvoices } from "@/hooks/api/use-portal"
+import { Skeleton } from "@/components/ui/skeleton"
 
 export default function B2BPortalPage() {
+    const { data: summary, isLoading: isSummaryLoading } = usePortalSummary()
+    const { data: orders = [], isLoading: isOrdersLoading } = usePortalOrders()
+    const { data: invoices = [], isLoading: isInvoicesLoading } = usePortalInvoices()
+
+    const formatCurrency = (amount: number) => {
+        return new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY', maximumFractionDigits: 0 }).format(amount)
+    }
+
+    const customerKpis = [
+        { title: "Toplam Sipariş", value: orders.length.toString(), icon: Package, color: "text-blue-500", description: "Toplam sipariş adedi", trendData: [{ value: 10 }, { value: 15 }, { value: orders.length }] },
+        { title: "Bekleyen Ödeme", value: formatCurrency(summary?.pendingPaymentAmount || 0), icon: CreditCard, color: "text-rose-500", description: "Vadesi gelmiş/yaklaşan", trendData: [{ value: 5 }, { value: 8 }, { value: summary?.pendingPaymentAmount || 0 }] },
+        { title: "Toplam Ciro", value: formatCurrency(summary?.totalOrderAmount || 0), icon: Truck, color: "text-emerald-500", description: "Bugüne kadarki toplam", trendData: [{ value: 1 }, { value: 2 }, { value: summary?.totalOrderAmount || 1 }] },
+        { title: "Destek Talebi", value: "0", icon: MessageSquare, color: "text-amber-500", description: "Hepsi kapalı", trendData: [{ value: 0 }, { value: 0 }, { value: 0 }] },
+    ]
+
     return (
         <PageWrapper className="flex flex-col gap-8 max-w-7xl mx-auto w-full pb-10">
             <MeshGradient />
 
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 relative z-10">
                 <div>
-                    <h1 className="text-4xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-foreground to-foreground/70">
+                    <h1 className="text-4xl font-extrabold tracking-tight bg-clip-text text-transparent bg-linear-to-r from-foreground to-foreground/70">
                         Müşteri Portalı
                     </h1>
                     <p className="text-muted-foreground mt-2 text-lg">
-                        Hoş geldiniz, <span className="text-primary font-semibold">TechCorp A.Ş.</span> Sipariş ve finansal hareketlerinizi buradan takip edebilirsiniz.
+                        Hoş geldiniz. Sipariş ve finansal hareketlerinizi buradan takip edebilirsiniz.
                     </p>
                 </div>
                 <div className="flex gap-3">
@@ -53,9 +64,13 @@ export default function B2BPortalPage() {
             </div>
 
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4 relative z-10">
-                {customerKpis.map((kpi, i) => (
-                    <KpiCard key={i} {...kpi} delay={i * 0.1} />
-                ))}
+                {isSummaryLoading ? (
+                    Array(4).fill(0).map((_, i) => <Skeleton key={i} className="h-32 w-full rounded-xl" />)
+                ) : (
+                    customerKpis.map((kpi, i) => (
+                        <KpiCard key={i} {...kpi} delay={i * 0.1} />
+                    ))
+                )}
             </div>
 
             <div className="grid gap-8 md:grid-cols-3 relative z-10">
@@ -88,17 +103,21 @@ export default function B2BPortalPage() {
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y">
-                                                {[
-                                                    { id: "ORD-9921", date: "24.02.2026", amount: "₺12.400", status: "Kargoda", statusColor: "bg-blue-500/10 text-blue-600" },
-                                                    { id: "ORD-9845", date: "15.02.2026", amount: "₺8.200", status: "Teslim Edildi", statusColor: "bg-emerald-500/10 text-emerald-600" },
-                                                    { id: "ORD-9712", date: "02.02.2026", amount: "₺15.000", status: "Hazırlanıyor", statusColor: "bg-amber-500/10 text-amber-600" },
-                                                ].map((order) => (
+                                                {isOrdersLoading ? (
+                                                    <tr><td colSpan={5} className="p-8 text-center"><Skeleton className="h-20 w-full" /></td></tr>
+                                                ) : orders.length === 0 ? (
+                                                    <tr><td colSpan={5} className="p-8 text-center text-muted-foreground">Henüz siparişiniz bulunmuyor.</td></tr>
+                                                ) : orders.map((order) => (
                                                     <tr key={order.id} className="hover:bg-muted/30 transition-colors">
-                                                        <td className="p-4 font-bold">{order.id}</td>
-                                                        <td className="p-4 text-muted-foreground">{order.date}</td>
-                                                        <td className="p-4 font-semibold">{order.amount}</td>
+                                                        <td className="p-4 font-bold">{order.orderNumber}</td>
+                                                        <td className="p-4 text-muted-foreground">{new Date(order.orderDate).toLocaleDateString('tr-TR')}</td>
+                                                        <td className="p-4 font-semibold">{formatCurrency(order.totalAmount)}</td>
                                                         <td className="p-4">
-                                                            <Badge variant="secondary" className={order.statusColor}>{order.status}</Badge>
+                                                            <Badge variant="secondary" className={
+                                                                order.status === 'Kargoda' ? "bg-blue-500/10 text-blue-600" :
+                                                                    order.status === 'Teslim Edildi' ? "bg-emerald-500/10 text-emerald-600" :
+                                                                        "bg-amber-500/10 text-amber-600"
+                                                            }>{order.status}</Badge>
                                                         </td>
                                                         <td className="p-4 text-right">
                                                             <Button variant="ghost" size="sm">Detay</Button>
@@ -127,16 +146,19 @@ export default function B2BPortalPage() {
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y">
-                                                {[
-                                                    { id: "INV-2026-081", date: "15.03.2026", amount: "₺12.400", status: "Bekliyor", statusColor: "bg-amber-500/10 text-amber-600" },
-                                                    { id: "INV-2026-072", date: "28.02.2026", amount: "₺8.200", status: "Ödendi", statusColor: "bg-emerald-500/10 text-emerald-600" },
-                                                ].map((invoice) => (
+                                                {isInvoicesLoading ? (
+                                                    <tr><td colSpan={5} className="p-8 text-center"><Skeleton className="h-20 w-full" /></td></tr>
+                                                ) : invoices.length === 0 ? (
+                                                    <tr><td colSpan={5} className="p-8 text-center text-muted-foreground">Henüz faturanız bulunmuyor.</td></tr>
+                                                ) : invoices.map((invoice) => (
                                                     <tr key={invoice.id} className="hover:bg-muted/30 transition-colors">
-                                                        <td className="p-4 font-bold">{invoice.id}</td>
-                                                        <td className="p-4 text-muted-foreground">{invoice.date}</td>
-                                                        <td className="p-4 font-semibold">{invoice.amount}</td>
+                                                        <td className="p-4 font-bold">{invoice.invoiceNumber}</td>
+                                                        <td className="p-4 text-muted-foreground">{new Date(invoice.dueDate).toLocaleDateString('tr-TR')}</td>
+                                                        <td className="p-4 font-semibold">{formatCurrency(invoice.totalAmount)}</td>
                                                         <td className="p-4">
-                                                            <Badge variant="secondary" className={invoice.statusColor}>{invoice.status}</Badge>
+                                                            <Badge variant="secondary" className={
+                                                                invoice.status === 'Ödendi' ? "bg-emerald-500/10 text-emerald-600" : "bg-amber-500/10 text-amber-600"
+                                                            }>{invoice.status}</Badge>
                                                         </td>
                                                         <td className="p-4 text-right">
                                                             <Button size="icon" variant="ghost" className="text-primary">
@@ -187,20 +209,27 @@ export default function B2BPortalPage() {
                         </CardContent>
                     </Card>
 
-                    <Card className="bg-gradient-to-br from-primary/10 to-transparent border-sidebar-border/50">
+                    <Card className="bg-linear-to-br from-primary/10 to-transparent border-sidebar-border/50">
                         <CardHeader>
                             <CardTitle className="text-md">Limit ve Bakiye</CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-4">
                             <div className="flex justify-between items-end">
                                 <div className="space-y-1">
-                                    <span className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Kullanılabilir Limit</span>
-                                    <p className="text-3xl font-black">₺125.500</p>
+                                    <span className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Güncel Borç Bakiye</span>
+                                    <p className="text-3xl font-black">
+                                        {summary ? formatCurrency(summary.outstandingBalance) : <Skeleton className="h-8 w-32" />}
+                                    </p>
                                 </div>
-                                <Badge className="bg-emerald-500/20 text-emerald-600 border-none px-2 py-0.5 text-[10px]">%84 Boş</Badge>
+                                <Badge className="bg-emerald-500/20 text-emerald-600 border-none px-2 py-0.5 text-[10px]">
+                                    {summary ? `%${Math.round(((150000 - summary.outstandingBalance) / 150000) * 100)} Boş` : "..."}
+                                </Badge>
                             </div>
                             <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
-                                <div className="h-full bg-primary w-[16%]" />
+                                <div
+                                    className="h-full bg-primary transition-all duration-500"
+                                    style={{ width: summary ? `${Math.min(100, (summary.outstandingBalance / 150000) * 100)}%` : "0%" }}
+                                />
                             </div>
                             <p className="text-[10px] text-muted-foreground italic">* Toplam kredi limitiniz ₺150.000'dir.</p>
                         </CardContent>

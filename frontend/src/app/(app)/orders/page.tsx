@@ -86,18 +86,19 @@ import { toast } from "sonner"
 import { PageWrapper } from "@/components/page-wrapper"
 import { TableSkeleton } from "@/components/skeletons"
 import { useOrders, useCreateOrder, useUpdateOrderStatus } from "@/hooks/api/use-orders"
+import { useCustomers } from "@/hooks/api/use-crm"
+import { useProducts } from "@/hooks/api/use-inventory"
 
 // Zod Schema
 const orderItemSchema = z.object({
-    name: z.string().min(2, "Ürün/Hizmet adı gereklidir."),
+    productId: z.string().min(1, "Ürün seçimi zorunludur."),
     qty: z.coerce.number().min(1, "Miktar en az 1 olmalıdır."),
     price: z.coerce.number().min(0, "Fiyat 0'dan küçük olamaz."),
 })
 
 const orderSchema = z.object({
     id: z.string().optional(),
-    customer: z.string().min(2, "Müşteri adı en az 2 karakter olmalıdır."),
-    customerType: z.enum(["B2B", "B2C"], { message: "Müşteri tipi seçimi zorunludur." }),
+    customerId: z.string().min(1, "Müşteri seçimi zorunludur."),
     status: z.string().min(1, "Durum seçimi zorunludur."),
     items: z.array(orderItemSchema).min(1, "En az bir sipariş kalemi eklenmelidir.")
 })
@@ -105,23 +106,27 @@ const orderSchema = z.object({
 type OrderFormValues = z.infer<typeof orderSchema>
 
 export type OrderItemType = {
-    name: string;
+    productId: string;
+    productName: string;
     qty: number;
     price: number;
 }
 
 export type OrderType = {
     id: string;
-    customer: string;
+    customerName: string;
     customerType: "B2B" | "B2C";
-    date: string;
-    total: number;
+    orderDate: string;
+    totalAmount: number;
     status: string;
     items: OrderItemType[];
 }
 
 export default function OrdersPage() {
     const { data: orders = [], isLoading } = useOrders()
+    const { data: customers = [] } = useCustomers()
+    const { data: products = [] } = useProducts()
+
     const { mutate: createOrder } = useCreateOrder()
     const { mutate: updateOrderStatusApi } = useUpdateOrderStatus()
 
@@ -135,10 +140,9 @@ export default function OrdersPage() {
     const form = useForm<OrderFormValues>({
         resolver: zodResolver(orderSchema) as any,
         defaultValues: {
-            customer: "",
-            customerType: "B2B",
+            customerId: "",
             status: "Yeni Sipariş",
-            items: [{ name: "", qty: 1, price: 0 }]
+            items: [{ productId: "", qty: 1, price: 0 }]
         }
     })
 
@@ -148,18 +152,23 @@ export default function OrdersPage() {
     })
 
     const onSubmit = (data: OrderFormValues) => {
+        const selectedCustomer = customers.find((c: any) => c.id === data.customerId)
+
         const dto = {
-            customerId: null,
-            customerName: data.customer,
-            customerType: data.customerType,
+            customerId: data.customerId,
+            customerName: selectedCustomer?.name || "",
+            customerType: selectedCustomer?.type || "B2B",
             status: data.status,
             orderDate: new Date().toISOString(),
-            items: data.items.map(item => ({
-                productName: item.name,
-                productId: null,
-                quantity: item.qty,
-                unitPrice: item.price
-            }))
+            items: data.items.map(item => {
+                const product = products.find((p: any) => p.id === item.productId)
+                return {
+                    productId: item.productId,
+                    productName: product?.name || "",
+                    quantity: item.qty,
+                    unitPrice: item.price
+                }
+            })
         }
 
         createOrder(dto, {
@@ -243,32 +252,20 @@ export default function OrdersPage() {
                                     <div className="grid grid-cols-2 gap-4">
                                         <FormField
                                             control={form.control}
-                                            name="customer"
+                                            name="customerId"
                                             render={({ field }) => (
                                                 <FormItem className="col-span-2">
-                                                    <FormLabel>Müşteri Adı</FormLabel>
-                                                    <FormControl>
-                                                        <Input placeholder="Firma veya Kişi Adı" {...field} />
-                                                    </FormControl>
-                                                    <FormMessage />
-                                                </FormItem>
-                                            )}
-                                        />
-                                        <FormField
-                                            control={form.control}
-                                            name="customerType"
-                                            render={({ field }) => (
-                                                <FormItem>
-                                                    <FormLabel>Müşteri Tipi</FormLabel>
+                                                    <FormLabel>Müşteri</FormLabel>
                                                     <Select onValueChange={field.onChange} defaultValue={field.value}>
                                                         <FormControl>
                                                             <SelectTrigger>
-                                                                <SelectValue placeholder="Tip seçin" />
+                                                                <SelectValue placeholder="Müşteri seçin" />
                                                             </SelectTrigger>
                                                         </FormControl>
                                                         <SelectContent>
-                                                            <SelectItem value="B2B">B2B (Kurumsal)</SelectItem>
-                                                            <SelectItem value="B2C">B2C (Bireysel)</SelectItem>
+                                                            {customers.map((c: any) => (
+                                                                <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                                                            ))}
                                                         </SelectContent>
                                                     </Select>
                                                     <FormMessage />
@@ -279,7 +276,7 @@ export default function OrdersPage() {
                                             control={form.control}
                                             name="status"
                                             render={({ field }) => (
-                                                <FormItem>
+                                                <FormItem className="col-span-2">
                                                     <FormLabel>Durum</FormLabel>
                                                     <Select onValueChange={field.onChange} defaultValue={field.value}>
                                                         <FormControl>
@@ -303,49 +300,73 @@ export default function OrdersPage() {
                                     <div className="space-y-4">
                                         <div className="flex items-center justify-between">
                                             <h4 className="text-sm font-semibold">Sipariş Kalemleri</h4>
-                                            <Button type="button" variant="outline" size="sm" onClick={() => append({ name: "", qty: 1, price: 0 })}>
+                                            <Button type="button" variant="outline" size="sm" onClick={() => append({ productId: "", qty: 1, price: 0 })}>
                                                 <Plus className="h-4 w-4 mr-1" /> Kalem Ekle
                                             </Button>
                                         </div>
                                         {fields.map((field, index) => (
-                                            <div key={field.id} className="flex gap-2 items-start">
-                                                <FormField
-                                                    control={form.control}
-                                                    name={`items.${index}.name`}
-                                                    render={({ field }) => (
-                                                        <FormItem className="flex-1">
-                                                            <FormControl>
-                                                                <Input placeholder="Ürün/Hizmet" {...field} />
-                                                            </FormControl>
-                                                            <FormMessage />
-                                                        </FormItem>
-                                                    )}
-                                                />
-                                                <FormField
-                                                    control={form.control}
-                                                    name={`items.${index}.qty`}
-                                                    render={({ field }) => (
-                                                        <FormItem className="w-20">
-                                                            <FormControl>
-                                                                <Input type="number" placeholder="Adet" {...field} />
-                                                            </FormControl>
-                                                            <FormMessage />
-                                                        </FormItem>
-                                                    )}
-                                                />
-                                                <FormField
-                                                    control={form.control}
-                                                    name={`items.${index}.price`}
-                                                    render={({ field }) => (
-                                                        <FormItem className="w-24">
-                                                            <FormControl>
-                                                                <Input type="number" placeholder="B. Fiyat" {...field} />
-                                                            </FormControl>
-                                                            <FormMessage />
-                                                        </FormItem>
-                                                    )}
-                                                />
-                                                <Button type="button" variant="ghost" size="icon" className="h-9 w-9 shrink-0 text-destructive mt-8" onClick={() => remove(index)}>
+                                            <div key={field.id} className="flex gap-2 items-start bg-muted/20 p-3 rounded-lg relative">
+                                                <div className="grid grid-cols-12 gap-2 w-full pr-8">
+                                                    <div className="col-span-6">
+                                                        <FormField
+                                                            control={form.control}
+                                                            name={`items.${index}.productId`}
+                                                            render={({ field }) => (
+                                                                <FormItem>
+                                                                    <Select
+                                                                        onValueChange={(val) => {
+                                                                            field.onChange(val)
+                                                                            const product = products.find((p: any) => p.id === val)
+                                                                            if (product) form.setValue(`items.${index}.price`, product.price)
+                                                                        }}
+                                                                        defaultValue={field.value}
+                                                                    >
+                                                                        <FormControl>
+                                                                            <SelectTrigger>
+                                                                                <SelectValue placeholder="Ürün seçin" />
+                                                                            </SelectTrigger>
+                                                                        </FormControl>
+                                                                        <SelectContent>
+                                                                            {products.map((p: any) => (
+                                                                                <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                                                                            ))}
+                                                                        </SelectContent>
+                                                                    </Select>
+                                                                    <FormMessage />
+                                                                </FormItem>
+                                                            )}
+                                                        />
+                                                    </div>
+                                                    <div className="col-span-3">
+                                                        <FormField
+                                                            control={form.control}
+                                                            name={`items.${index}.qty`}
+                                                            render={({ field }) => (
+                                                                <FormItem>
+                                                                    <FormControl>
+                                                                        <Input type="number" placeholder="Adet" {...field} />
+                                                                    </FormControl>
+                                                                    <FormMessage />
+                                                                </FormItem>
+                                                            )}
+                                                        />
+                                                    </div>
+                                                    <div className="col-span-3">
+                                                        <FormField
+                                                            control={form.control}
+                                                            name={`items.${index}.price`}
+                                                            render={({ field }) => (
+                                                                <FormItem>
+                                                                    <FormControl>
+                                                                        <Input type="number" placeholder="Fiyat" {...field} />
+                                                                    </FormControl>
+                                                                    <FormMessage />
+                                                                </FormItem>
+                                                            )}
+                                                        />
+                                                    </div>
+                                                </div>
+                                                <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-destructive absolute right-2 top-2" onClick={() => remove(index)}>
                                                     <Trash2 className="h-4 w-4" />
                                                 </Button>
                                             </div>

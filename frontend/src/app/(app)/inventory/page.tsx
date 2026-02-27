@@ -107,71 +107,11 @@ export type ProductType = {
     name: string;
     sku: string;
     category: string;
-    type: "Fiziksel" | "Hizmet";
     price: number;
-    stock: number | null;
+    stockQuantity: number;
     status: string;
-    variants: string[];
+    minimumStockLevel: number;
 }
-
-// Mock Envanter Verisi
-const initialProducts: ProductType[] = [
-    {
-        id: "PRD-001",
-        name: "Universal CRM Lisansı (Yıllık)",
-        sku: "UC-LIC-1Y",
-        category: "Yazılım / Hizmet",
-        type: "Hizmet",
-        price: 15000,
-        stock: null,
-        status: "Aktif",
-        variants: ["10 Kullanıcı", "50 Kullanıcı", "Sınırsız"]
-    },
-    {
-        id: "PRD-002",
-        name: "Cisco Catalyst 9300 Switch",
-        sku: "HW-CS-9300",
-        category: "Donanım / Ağ",
-        type: "Fiziksel",
-        price: 45000,
-        stock: 12,
-        status: "Aktif",
-        variants: ["24 Port", "48 Port"]
-    },
-    {
-        id: "PRD-003",
-        name: "Ergonomik Ofis Koltuğu",
-        sku: "OFF-CH-01",
-        category: "Ofis Mobilyası",
-        type: "Fiziksel",
-        price: 3500,
-        stock: 3,
-        status: "Kritik Stok",
-        variants: ["Siyah", "Gri", "Mavi"]
-    },
-    {
-        id: "PRD-004",
-        name: "Siber Güvenlik Danışmanlığı (Adam/Gün)",
-        sku: "SRV-SEC-01",
-        category: "Danışmanlık",
-        type: "Hizmet",
-        price: 8000,
-        stock: null,
-        status: "Aktif",
-        variants: []
-    },
-    {
-        id: "PRD-005",
-        name: "Lenovo ThinkPad X1 Carbon",
-        sku: "HW-LT-X1",
-        category: "Donanım / Bilgisayar",
-        type: "Fiziksel",
-        price: 65000,
-        stock: 0,
-        status: "Tükendi",
-        variants: ["16GB/512GB", "32GB/1TB"]
-    },
-]
 
 export default function InventoryPage() {
     const { data: products = [], isLoading } = useProducts()

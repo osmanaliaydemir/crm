@@ -81,14 +81,14 @@ import { createPortal } from "react-dom"
 const dealSchema = z.object({
     id: z.string().optional(),
     title: z.string().min(2, "Fırsat adı en az 2 karakter olmalıdır."),
-    customerId: z.string().min(1, "Müşteri UID seçimi zorunlu"), // Backend foreign key
+    customerId: z.string().min(1, "Müşteri UID seçimi zorunlu"),
     value: z.coerce.number().min(0, "Tutar 0'dan küçük olamaz."),
-    expectedCloseDate: z.string().min(2, "Kapanış tarihi gereklidir."),
+    expectedCloseDate: z.string().min(1, "Kapanış tarihi gereklidir."),
     probability: z.coerce.number().min(1, "Olasılık değeri gereklidir."),
-    assignedUserId: z.string().min(1, "Sorumlu id gerekir."),
+    assignedToId: z.string().optional(),
     stage: z.string().min(1, "Aşama seçimi zorunludur."),
     customerName: z.string().optional(),
-    assigneeName: z.string().optional()
+    assignedToName: z.string().optional()
 })
 
 type DealFormValues = z.infer<typeof dealSchema>
@@ -98,11 +98,12 @@ const STAGE_COLUMNS = [
     { id: "Lead", title: "Potansiyel (Lead)", color: "border-l-4 border-l-blue-500" },
     { id: "Qualified", title: "Görüşme (Qualified)", color: "border-l-4 border-l-yellow-500" },
     { id: "Proposal", title: "Teklif Sunuldu", color: "border-l-4 border-l-orange-500" },
+    { id: "Negotiation", title: "Pazarlık", color: "border-l-4 border-l-purple-500" },
     { id: "Won", title: "Kazanıldı (Won)", color: "border-l-4 border-l-green-500" },
-    { id: "Lost", title: "Kaybedildi (Lost)", color: "border-l-4 border-l-red-500" } // Kaybeden kolonu
+    { id: "Lost", title: "Kaybedildi (Lost)", color: "border-l-4 border-l-red-500" }
 ]
 
-import { useDeals, useCreateDeal, useUpdateDeal, useDeleteDeal } from "@/hooks/api/use-pipeline"
+import { useDeals, useCreateDeal, useUpdateDeal, useUpdateDealStage, useDeleteDeal, Deal } from "@/hooks/api/use-pipeline"
 import { useCustomers } from "@/hooks/api/use-crm"
 import { Skeleton } from "@/components/ui/skeleton"
 
@@ -173,7 +174,7 @@ function DealCardContent({ deal, onEdit, onDelete }: any) {
                 </div>
                 <Avatar className="h-6 w-6 mt-2">
                     <AvatarFallback className="text-[10px] bg-primary/10 text-primary">
-                        {deal.assigneeName || "???"}
+                        {deal.assignedToName || "???"}
                     </AvatarFallback>
                 </Avatar>
             </CardFooter>
@@ -247,7 +248,7 @@ function DroppableColumn({ column, onAddClick, onEdit, onDelete }: any) {
 
 export default function PipelinePage() {
     const [isDialogOpen, setIsDialogOpen] = useState(false)
-    const [editingDeal, setEditingDeal] = useState<DealFormValues | null>(null)
+    const [editingDeal, setEditingDeal] = useState<Deal | null>(null)
     const [dealToDelete, setDealToDelete] = useState<{ id: string, stage: string } | null>(null)
     const [automationDeal, setAutomationDeal] = useState<any | null>(null)
     const [isAutomationOpen, setIsAutomationOpen] = useState(false)
@@ -260,6 +261,7 @@ export default function PipelinePage() {
     const { data: customerData } = useCustomers();
     const createDealMutation = useCreateDeal();
     const updateDealMutation = useUpdateDeal();
+    const updateDealStageMutation = useUpdateDealStage();
     const deleteDealMutation = useDeleteDeal();
 
     // Map Backend Data Context to UI Strategy
@@ -291,9 +293,9 @@ export default function PipelinePage() {
             title: "",
             customerId: "",
             value: 0,
-            expectedCloseDate: new Date().toISOString().split('T')[0], // yyyy-MM-dd
+            expectedCloseDate: new Date().toISOString().split('T')[0],
             probability: 20,
-            assignedUserId: "current-user-id", // mock
+            assignedToId: "",
             stage: "Lead"
         }
     })
@@ -306,13 +308,13 @@ export default function PipelinePage() {
             value: 0,
             expectedCloseDate: new Date().toISOString().split('T')[0],
             probability: 20,
-            assignedUserId: "current-user-id",
+            assignedToId: "",
             stage: stage || "Lead"
         })
         setIsDialogOpen(true)
     }
 
-    const handleEditClick = (deal: any) => {
+    const handleEditClick = (deal: Deal) => {
         setEditingDeal(deal)
         form.reset({
             id: deal.id,
@@ -321,7 +323,7 @@ export default function PipelinePage() {
             value: deal.value,
             expectedCloseDate: deal.expectedCloseDate?.split('T')[0] || new Date().toISOString().split('T')[0],
             probability: deal.probability,
-            assignedUserId: deal.assignedUserId,
+            assignedToId: deal.assignedToId || "",
             stage: deal.stage
         })
         setIsDialogOpen(true)
@@ -425,7 +427,7 @@ export default function PipelinePage() {
                     newCols[overColIndex].deals.push(movingDeal as any)
 
                     // Execute actual database update behind scenes
-                    updateDealMutation.mutateAsync({ id: activeId as string, data: { stage: overColId } })
+                    updateDealStageMutation.mutateAsync({ id: activeId as string, stage: overColId })
 
                     // Trigger Automation if won
                     if (overColId === "Won") {
@@ -598,12 +600,12 @@ export default function PipelinePage() {
                                 />
                                 <FormField
                                     control={form.control}
-                                    name="assignedUserId"
+                                    name="assignedToId"
                                     render={({ field }) => (
                                         <FormItem>
-                                            <FormLabel>Sorumlu (Kısa Kod/ID)</FormLabel>
+                                            <FormLabel>Sorumlu User ID</FormLabel>
                                             <FormControl>
-                                                <Input placeholder="c7b13... vb." {...field} />
+                                                <Input placeholder="UID..." {...field} />
                                             </FormControl>
                                             <FormMessage />
                                         </FormItem>
@@ -677,7 +679,7 @@ export default function PipelinePage() {
                     <div className="bg-muted/30 p-4 rounded-lg space-y-3 mt-4">
                         <div className="flex justify-between text-sm">
                             <span className="text-muted-foreground">Müşteri:</span>
-                            <span className="font-medium">{automationDeal?.customer}</span>
+                            <span className="font-medium">{automationDeal?.customerName}</span>
                         </div>
                         <div className="flex justify-between text-sm">
                             <span className="text-muted-foreground">Proje Değeri:</span>

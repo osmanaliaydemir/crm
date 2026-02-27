@@ -17,17 +17,32 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { useNotificationStore } from "@/store/notifications"
+import { useNotifications, useUnreadNotificationCount, useMarkNotificationAsRead, useMarkAllNotificationsAsRead } from "@/lib/hooks/useNotificationQueries"
 import { useAuthStore, UserRole } from "@/store/authStore"
+import { formatDistanceToNow } from "date-fns"
+import { tr } from "date-fns/locale"
 
 export function AppHeader() {
     const { theme, setTheme } = useTheme()
     const [mounted, setMounted] = useState(false)
-    const { notifications, markAsRead } = useNotificationStore()
+
+    // API Hooks
+    const { data: notifications = [] } = useNotifications()
+    const { data: unreadCount = 0 } = useUnreadNotificationCount()
+    const { mutate: markAsRead } = useMarkNotificationAsRead()
+    const { mutate: markAllAsRead } = useMarkAllNotificationsAsRead()
+
     const { user, switchRole } = useAuthStore()
 
-    const unreadCount = notifications.filter(n => !n.read).length
-    const recentNotifications = notifications.slice(0, 4)
+    const recentNotifications = notifications.slice(0, 5)
+
+    const formatTime = (dateStr: string) => {
+        try {
+            return formatDistanceToNow(new Date(dateStr), { addSuffix: true, locale: tr })
+        } catch {
+            return dateStr
+        }
+    }
 
     useEffect(() => {
         setMounted(true)
@@ -87,20 +102,31 @@ export function AppHeader() {
                                 </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end" className="w-80">
-                                <DropdownMenuLabel className="font-semibold text-lg">Bildirimler {unreadCount > 0 && `(${unreadCount})`}</DropdownMenuLabel>
-                                <DropdownMenuSeparator />
+                                <div className="flex items-center justify-between px-4 py-2 border-b">
+                                    <DropdownMenuLabel className="p-0 font-semibold text-lg">Bildirimler {unreadCount > 0 && `(${unreadCount})`}</DropdownMenuLabel>
+                                    {unreadCount > 0 && (
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="h-8 text-[10px] text-muted-foreground hover:text-primary"
+                                            onClick={() => markAllAsRead()}
+                                        >
+                                            Tümünü Oku
+                                        </Button>
+                                    )}
+                                </div>
                                 <div className="max-h-[300px] overflow-y-auto">
                                     {recentNotifications.length > 0 ? recentNotifications.map(notif => (
                                         <DropdownMenuItem
                                             key={notif.id}
-                                            className={`flex flex-col items-start gap-1 p-3 cursor-pointer ${notif.read ? 'opacity-70 focus:bg-muted/30' : 'bg-primary/5 focus:bg-primary/10'}`}
-                                            onClick={() => !notif.read && markAsRead(notif.id)}
+                                            className={`flex flex-col items-start gap-1 p-3 cursor-pointer ${notif.isRead ? 'opacity-70 focus:bg-muted/30' : 'bg-primary/5 focus:bg-primary/10'}`}
+                                            onClick={() => !notif.isRead && markAsRead(notif.id)}
                                         >
-                                            <span className={`font-medium text-sm ${notif.type === 'finance' ? 'text-emerald-600 dark:text-emerald-400' : notif.type === 'calendar' ? 'text-purple-600 dark:text-purple-400' : notif.type === 'mention' ? 'text-amber-600 dark:text-amber-400' : ''}`}>
+                                            <span className={`font-medium text-sm ${notif.typeName === 'Finance' ? 'text-emerald-600 dark:text-emerald-400' : notif.typeName === 'Calendar' ? 'text-purple-600 dark:text-purple-400' : notif.typeName === 'Mention' ? 'text-amber-600 dark:text-amber-400' : ''}`}>
                                                 {notif.title}
                                             </span>
                                             <span className="text-xs text-muted-foreground line-clamp-2">{notif.description}</span>
-                                            <span className="text-[10px] text-muted-foreground mt-1">{notif.time}</span>
+                                            <span className="text-[10px] text-muted-foreground mt-1">{formatTime(notif.createdAt)}</span>
                                         </DropdownMenuItem>
                                     )) : (
                                         <div className="p-4 text-center text-sm text-muted-foreground">Bildiriminiz Yok</div>

@@ -1405,7 +1405,10 @@
         },
         "runtime": {
           "bin/placeholder/CRM.Infrastructure.dll": {}
-        }
+        },
+        "frameworkReferences": [
+          "Microsoft.AspNetCore.App"
+        ]
       }
     }
   },

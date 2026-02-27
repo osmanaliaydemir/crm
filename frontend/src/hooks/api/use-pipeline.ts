@@ -12,28 +12,28 @@ export const pipelineKeys = {
 export interface Deal {
     id: string;
     title: string;
+    description?: string;
     customerId: string;
-    value: number;
-    expectedCloseDate: string;
-    probability: number;
-    assignedUserId: string;
-    stage: string;
-    notes?: string;
-
-    // UI İçin Eklenen Sanal Özellikler (Eğer backenden gelmiyorsa UI'da merge edilebilir)
     customerName?: string;
-    assigneeName?: string;
+    value: number;
+    probability: number;
+    assignedToId?: string;
+    assignedToName?: string;
+    expectedCloseDate: string;
+    stage: string;
+    stageName?: string;
+    sortOrder: number;
+    createdAt?: string;
 }
 
-export type DealFormValues = Omit<Deal, "id" | "customerName" | "assigneeName">
+export type DealFormValues = Omit<Deal, "id" | "customerName" | "assignedToName" | "stageName" | "createdAt" | "sortOrder">
 
-// Fırsatları Getir (Pipeline Panosu İçin Kolonlara Bölünmüş Halini Bekliyoruz Veya Tümü)
+// Fırsatları Getir
 export function useDeals() {
     return useQuery({
         queryKey: pipelineKeys.boards(),
         queryFn: async () => {
-            const { data } = await api.get<Deal[]>("/sales/deals")
-            // Veya /deals. Backend'de Sales/Deals yapılış şekline göre değiştireceğiz.
+            const { data } = await api.get<Deal[]>("/pipeline")
             return data;
         }
     })
@@ -45,36 +45,50 @@ export function useCreateDeal() {
 
     return useMutation({
         mutationFn: async (newDeal: DealFormValues) => {
-            const { data } = await api.post("/sales/deals", newDeal)
+            const { data } = await api.post("/pipeline", newDeal)
             return data as Deal
         },
         onSuccess: (data) => {
             queryClient.invalidateQueries({ queryKey: pipelineKeys.boards() });
             toast.success("Fırsat Başarıyla Eklendi", { description: `${data.title} panoya eklendi.` })
-        },
-        onError: (err: any) => {
-            const message = err?.response?.data?.message || "Sunucu tarafında bir hata oluştu."
-            toast.error("Fırsat Eklenemedi", { description: message })
         }
     })
 }
 
-// Fırsat Güncelle (Örn; Kolon taşıma esnasında stage güncellemesi)
+// Fırsat Güncelle (Genel Düzenleme)
 export function useUpdateDeal() {
     const queryClient = useQueryClient()
 
     return useMutation({
         mutationFn: async ({ id, data }: { id: string, data: Partial<Deal> }) => {
-            const { data: res } = await api.put(`/sales/deals/${id}`, data)
+            const { data: res } = await api.put(`/pipeline/${id}`, data)
             return res as Deal
         },
-        // Optimistic UI update kullanılmıyorsa standart refetch:
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: pipelineKeys.boards() });
+            toast.success("Fırsat Güncellendi");
+        }
+    })
+}
+
+// Aşama Güncelle (Drag & Drop için PATCH)
+export function useUpdateDealStage() {
+    const queryClient = useQueryClient()
+
+    return useMutation({
+        mutationFn: async ({ id, stage, sortOrder = 0 }: { id: string, stage: string, sortOrder?: number }) => {
+            // Backend UpdatePipelineDealStageDto bekliyor: { Id, NewStage, NewSortOrder }
+            await api.patch(`/pipeline/${id}/stage`, {
+                id,
+                newStage: stage,
+                newSortOrder: sortOrder
+            })
+        },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: pipelineKeys.boards() });
         },
         onError: (err: any) => {
-            const message = err?.response?.data?.message || "Sunucu tarafında bir hata oluştu."
-            toast.error("Güncelleme Başarısız", { description: message })
+            toast.error("Aşama güncellenemedi.");
         }
     })
 }
@@ -85,16 +99,14 @@ export function useDeleteDeal() {
 
     return useMutation({
         mutationFn: async (id: string) => {
-            await api.delete(`/sales/deals/${id}`)
+            await api.delete(`/pipeline/${id}`)
             return id
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: pipelineKeys.boards() });
             toast.success("Fırsat Silindi")
-        },
-        onError: (err: any) => {
-            const message = err?.response?.data?.message || "Fırsat silinirken hata oluştu."
-            toast.error("Silme Başarısız", { description: message })
         }
     })
 }
+
+

@@ -19,8 +19,10 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { useEvents, useCreateEvent, useUpdateEvent, useDeleteEvent } from "@/hooks/api/use-calendar"
+import { useEvents, useCreateEvent, useUpdateEvent, useDeleteEvent, useAddAttendee, useRemoveAttendee } from "@/hooks/api/use-calendar"
+import { useUsers } from "@/hooks/api/use-users"
 import { cn } from "@/lib/utils"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
     Dialog,
     DialogContent,
@@ -46,6 +48,8 @@ interface Event {
     type: "project" | "deal" | "meeting"
     description: string
     manager: string
+    managerId: string
+    attendees: any[]
 }
 
 export function CalendarView() {
@@ -55,9 +59,12 @@ export function CalendarView() {
 
     // API Hooks
     const { data: rawEvents = [], isLoading } = useEvents()
+    const { data: employees = [] } = useUsers()
     const { mutate: addEvent } = useCreateEvent()
     const { mutate: updateEvent } = useUpdateEvent()
     const { mutate: deleteEvent } = useDeleteEvent()
+    const { mutate: addAttendeeMutation } = useAddAttendee()
+    const { mutate: removeAttendeeMutation } = useRemoveAttendee()
 
     // Normalize DB data to local mapped structure
     const events: Event[] = rawEvents.map((e: any) => ({
@@ -66,7 +73,9 @@ export function CalendarView() {
         date: new Date(e.startDate),
         type: e.type === "Proje" ? "project" : e.type === "Satış" ? "deal" : "meeting",
         description: e.description || "",
-        manager: e.userName || "Atanmadı"
+        manager: e.userName || "Atanmadı",
+        managerId: e.userId,
+        attendees: e.attendees || []
     }))
 
     // Dialog states
@@ -77,7 +86,8 @@ export function CalendarView() {
     const [formTitle, setFormTitle] = React.useState("")
     const [formDesc, setFormDesc] = React.useState("")
     const [formType, setFormType] = React.useState<"project" | "deal" | "meeting">("meeting")
-    const [formManager, setFormManager] = React.useState("Osman Ali")
+    const [formManagerId, setFormManagerId] = React.useState("")
+    const [selectedAttendeeId, setSelectedAttendeeId] = React.useState("")
 
     const daysInMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate()
     const firstDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).getDay()
@@ -112,7 +122,7 @@ export function CalendarView() {
         setFormTitle("")
         setFormDesc("")
         setFormType("meeting")
-        setFormManager("Osman Ali")
+        setFormManagerId("")
         setIsDialogOpen(true)
     }
 
@@ -121,7 +131,7 @@ export function CalendarView() {
         setFormTitle(event.title)
         setFormDesc(event.description)
         setFormType(event.type)
-        setFormManager(event.manager)
+        setFormManagerId(event.managerId)
         setIsDialogOpen(true)
     }
 
@@ -212,7 +222,10 @@ export function CalendarView() {
                         {days.map(day => {
                             const dayEvents = getEventsForDay(day)
                             const isSelected = selectedDate?.getDate() === day && selectedDate?.getMonth() === currentDate.getMonth()
-                            const isToday = day === 25 && currentDate.getMonth() === 1 && year === 2026 // Real world today fix
+
+                            const isToday = day === today.getDate() &&
+                                currentDate.getMonth() === today.getMonth() &&
+                                currentDate.getFullYear() === today.getFullYear()
 
                             return (
                                 <div
@@ -300,9 +313,57 @@ export function CalendarView() {
                                         <p className="text-xs text-muted-foreground leading-relaxed italic">
                                             "{event.description}"
                                         </p>
-                                        <div className="flex items-center gap-2 pt-1 border-t mt-2">
-                                            <Users className="h-3 w-3 text-muted-foreground" />
-                                            <span className="text-[10px] text-muted-foreground">{event.manager}</span>
+                                        <div className="space-y-2 pt-2 border-t mt-2">
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-2">
+                                                    <Users className="h-3 w-3 text-muted-foreground" />
+                                                    <span className="text-[10px] text-muted-foreground font-medium">{event.manager}</span>
+                                                </div>
+                                                {event.attendees.length > 0 && (
+                                                    <div className="flex -space-x-2">
+                                                        {event.attendees.map((a: any) => (
+                                                            <Avatar key={a.id} className="h-5 w-5 border-2 border-background group/avatar relative">
+                                                                <AvatarFallback className="text-[8px]">{a.userName.substring(0, 2).toUpperCase()}</AvatarFallback>
+                                                                <button
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        removeAttendeeMutation(a.id);
+                                                                    }}
+                                                                    className="absolute inset-0 bg-red-500/80 rounded-full flex items-center justify-center opacity-0 group-hover/avatar:opacity-100 transition-opacity"
+                                                                >
+                                                                    <Trash2 className="h-2 w-2 text-white" />
+                                                                </button>
+                                                            </Avatar>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Attendee Adder */}
+                                            <div className="flex gap-1 items-center" onClick={(e) => e.stopPropagation()}>
+                                                <Select value={selectedAttendeeId} onValueChange={setSelectedAttendeeId}>
+                                                    <SelectTrigger className="h-6 text-[10px] py-0 px-2 flex-1">
+                                                        <SelectValue placeholder="Katılımcı Seç" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        {employees.filter(emp => !event.attendees.some((a: any) => a.userId === emp.id)).map(emp => (
+                                                            <SelectItem key={emp.id} value={emp.id} className="text-[10px]">{emp.name}</SelectItem>
+                                                        ))}
+                                                    </SelectContent>
+                                                </Select>
+                                                <Button
+                                                    size="icon"
+                                                    className="h-6 w-6 shrink-0"
+                                                    variant="secondary"
+                                                    onClick={() => {
+                                                        if (!selectedAttendeeId) return;
+                                                        addAttendeeMutation({ eventId: event.id, userId: selectedAttendeeId });
+                                                        setSelectedAttendeeId("");
+                                                    }}
+                                                >
+                                                    <Plus className="h-3 w-3" />
+                                                </Button>
+                                            </div>
                                         </div>
                                     </div>
                                 ))}
@@ -394,12 +455,16 @@ export function CalendarView() {
                         </div>
                         <div className="grid gap-2">
                             <Label htmlFor="manager">Sorumlu</Label>
-                            <Input
-                                id="manager"
-                                value={formManager}
-                                onChange={(e) => setFormManager(e.target.value)}
-                                placeholder="İsim Soyisim"
-                            />
+                            <Select value={formManagerId} onValueChange={setFormManagerId}>
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Personel seçin" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {employees.map(emp => (
+                                        <SelectItem key={emp.id} value={emp.id}>{emp.name}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
                         </div>
                         <div className="grid gap-2">
                             <Label htmlFor="description">Açıklama</Label>

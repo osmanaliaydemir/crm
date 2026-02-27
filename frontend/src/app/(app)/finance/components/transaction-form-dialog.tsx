@@ -26,19 +26,21 @@ import {
 } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-
+import { BankAccount } from "@/types/finance"
 import { transactionSchema, TransactionFormValues } from "@/schemas/finance"
 
 interface TransactionFormDialogProps {
     isOpen: boolean;
     onOpenChange: (open: boolean) => void;
     onSubmit: (data: TransactionFormValues) => void;
+    accounts: BankAccount[];
 }
 
 export function TransactionFormDialog({
     isOpen,
     onOpenChange,
-    onSubmit
+    onSubmit,
+    accounts
 }: TransactionFormDialogProps) {
 
     const form = useForm<TransactionFormValues>({
@@ -48,7 +50,8 @@ export function TransactionFormDialog({
             type: "in",
             category: "Tahsilat",
             amount: 0,
-            status: "Tamamlandı"
+            status: "Tamamlandı",
+            accountId: ""
         }
     })
 
@@ -121,6 +124,30 @@ export function TransactionFormDialog({
                                     <FormControl>
                                         <Input placeholder="İşlem açıklaması" {...field} />
                                     </FormControl>
+                                    <FormMessage />
+                                </FormItem>
+                            )}
+                        />
+                        <FormField
+                            control={form.control}
+                            name="accountId"
+                            render={({ field }) => (
+                                <FormItem>
+                                    <FormLabel>Hesap (Opsiyonel)</FormLabel>
+                                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                        <FormControl>
+                                            <SelectTrigger>
+                                                <SelectValue placeholder="İlgili hesabı seçin" />
+                                            </SelectTrigger>
+                                        </FormControl>
+                                        <SelectContent>
+                                            {accounts.map(acc => (
+                                                <SelectItem key={acc.id} value={acc.id}>
+                                                    {acc.name} (₺{acc.balance.toLocaleString('tr-TR')})
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
                                     <FormMessage />
                                 </FormItem>
                             )}

@@ -16,6 +16,8 @@ public static class DependencyInjection
                 b => b.MigrationsAssembly(typeof(CrmDbContext).Assembly.FullName)));
 
         services.AddScoped<IApplicationDbContext>(provider => provider.GetRequiredService<CrmDbContext>());
+        services.AddHttpContextAccessor();
+        services.AddScoped<ICurrentUserService, Services.CurrentUserService>();
 
         return services;
     }

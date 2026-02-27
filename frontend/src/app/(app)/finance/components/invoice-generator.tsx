@@ -9,6 +9,9 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { useCustomers } from "@/hooks/api/use-crm"
+import { useCreateInvoice } from "@/hooks/api/use-finance"
 
 type InvoiceItem = {
     id: string;
@@ -18,10 +21,15 @@ type InvoiceItem = {
 }
 
 export function InvoiceGenerator() {
+    const { data: customers = [] } = useCustomers()
+    const { mutate: createInvoice } = useCreateInvoice()
+
     const [invoiceNo, setInvoiceNo] = useState(`INV-${new Date().getFullYear()}-${Math.floor(Math.random() * 10000)}`)
     const [date, setDate] = useState(new Date().toISOString().split('T')[0])
+    const [dueDate, setDueDate] = useState(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0])
 
     // Customer Info
+    const [selectedCustomerId, setSelectedCustomerId] = useState<string>("")
     const [customerName, setCustomerName] = useState("")
     const [customerAddress, setCustomerAddress] = useState("")
     const [customerTaxId, setCustomerTaxId] = useState("")
@@ -57,12 +65,45 @@ export function InvoiceGenerator() {
         return new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(amount)
     }
 
+    const handleSaveInvoice = () => {
+        if (!selectedCustomerId) {
+            toast.error("Lütfen bir müşteri seçin.")
+            return
+        }
+
+        const payload = {
+            invoiceNumber: invoiceNo,
+            customerId: selectedCustomerId,
+            issueDate: new Date(date).toISOString(),
+            dueDate: new Date(dueDate).toISOString(),
+            taxRate: 20,
+            status: "Taslak",
+            notes: "",
+            items: items.map(item => ({
+                description: item.description,
+                quantity: item.quantity,
+                unitPrice: item.price
+            }))
+        }
+
+        createInvoice(payload)
+    }
+
     const handlePrint = () => {
-        if (!customerName) {
+        if (!selectedCustomerId && !customerName) {
             toast.error("Lütfen müşteri bilgilerini doldurun.")
             return
         }
         window.print()
+    }
+
+    const handleCustomerChange = (val: string) => {
+        setSelectedCustomerId(val)
+        const customer = customers.find(c => c.id === val)
+        if (customer) {
+            setCustomerName(customer.name)
+            // Backend'de adres ve vergi no alanları varsa onları da buraya setleyebilirsiniz
+        }
     }
 
     return (
@@ -73,7 +114,7 @@ export function InvoiceGenerator() {
                     <p className="text-sm text-muted-foreground">PDF olarak indirmek veya yazdırmak için fatura detaylarını doldurun.</p>
                 </div>
                 <div className="flex gap-2">
-                    <Button variant="outline" onClick={() => toast.success("Taslak kaydedildi.")}>
+                    <Button variant="outline" onClick={handleSaveInvoice}>
                         <Save className="h-4 w-4 mr-2" /> Kaydet
                     </Button>
                     <Button onClick={handlePrint} className="bg-primary hover:bg-primary/90">
@@ -126,7 +167,20 @@ export function InvoiceGenerator() {
                             <h4 className="text-sm font-bold uppercase text-muted-foreground tracking-wider border-b pb-2">Müşteri / Cari Bilgileri</h4>
                             <div className="space-y-3 print:hidden">
                                 <div className="space-y-1">
-                                    <Label className="text-xs">Firma Ünvanı / Ad Soyad</Label>
+                                    <Label className="text-xs">Müşteri Seçin</Label>
+                                    <Select onValueChange={handleCustomerChange} value={selectedCustomerId}>
+                                        <SelectTrigger className="h-8 text-sm">
+                                            <SelectValue placeholder="Sistemden müşteri seçin" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {customers.map(c => (
+                                                <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                                <div className="space-y-1">
+                                    <Label className="text-xs">Firma Ünvanı / Ad Soyad (Manuel Düzenle)</Label>
                                     <Input
                                         placeholder="Müşteri Adı"
                                         value={customerName}

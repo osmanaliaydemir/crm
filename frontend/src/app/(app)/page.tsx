@@ -6,9 +6,14 @@ import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'rec
 import { ActivityTimeline } from "@/components/activity-timeline"
 import { KpiCard } from "@/components/kpi-card"
 import { SmartGreeting } from "@/components/smart-greeting"
+import { useActiveAnnouncements } from "@/lib/hooks/useAnnouncementQueries"
+import { formatDistanceToNow } from "date-fns"
+import { tr } from "date-fns/locale"
+import { BellRing, Bell } from "lucide-react"
 import { MeshGradient } from "@/components/mesh-gradient"
 import { motion } from "framer-motion"
 import { PageWrapper } from "@/components/page-wrapper"
+import Link from "next/link"
 import { Button as UIButton } from "@/components/ui/button"
 import { useAuthStore } from "@/store/authStore"
 import { useDashboardSummary, useMonthlyFinancial } from "@/lib/hooks/useDashboardQueries"
@@ -16,6 +21,15 @@ import { Skeleton } from "@/components/ui/skeleton"
 
 export default function Home() {
   const { user } = useAuthStore()
+  const { data: announcements = [] } = useActiveAnnouncements()
+
+  const formatTime = (dateStr: string) => {
+    try {
+      return formatDistanceToNow(new Date(dateStr), { addSuffix: true, locale: tr })
+    } catch {
+      return dateStr
+    }
+  }
 
   const canViewRevenueChart = user?.role === "admin" || user?.role === "sales" || user?.role === "finance";
 
@@ -76,6 +90,45 @@ export default function Home() {
       <MeshGradient />
 
       <SmartGreeting />
+
+      {/* ANNOUNCEMENT STRIP */}
+      {announcements.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-6 flex flex-col gap-3"
+        >
+          {announcements.slice(0, 2).map((ann: any) => (
+            <div
+              key={ann.id}
+              className={`group relative overflow-hidden flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-2xl border backdrop-blur-md transition-all duration-300 hover:shadow-lg ${ann.typeName === 'Acil'
+                ? 'bg-red-500/5 border-red-500/20 hover:border-red-500/40'
+                : 'bg-primary/5 border-primary/10 hover:border-primary/30'
+                }`}
+            >
+              <div className="flex items-start gap-4">
+                <div className={`p-2 rounded-xl shrink-0 ${ann.typeName === 'Acil' ? 'bg-red-500/20 text-red-500' : 'bg-primary/20 text-primary'}`}>
+                  <BellRing className="h-5 w-5 animate-ring" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className={`text-[10px] font-bold uppercase tracking-wider ${ann.typeName === 'Acil' ? 'text-red-500' : 'text-primary'}`}>
+                      {ann.typeName} Duyurusu
+                    </span>
+                    <span className="text-[10px] text-muted-foreground">•</span>
+                    <span className="text-[10px] text-muted-foreground font-medium">{formatTime(ann.createdAt)}</span>
+                  </div>
+                  <h3 className="text-sm font-bold leading-none mt-1">{ann.title}</h3>
+                  <p className="text-xs text-muted-foreground mt-1.5 line-clamp-1">{ann.content}</p>
+                </div>
+              </div>
+              <UIButton variant="ghost" size="sm" className="h-8 text-xs font-semibold shrink-0 group-hover:bg-background/50" asChild>
+                <Link href="/employee-portal">Detayları Gör</Link>
+              </UIButton>
+            </div>
+          ))}
+        </motion.div>
+      )}
 
       {/* KPI CARDS */}
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4 mb-8">

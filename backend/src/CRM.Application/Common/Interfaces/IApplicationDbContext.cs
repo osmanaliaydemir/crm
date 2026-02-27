@@ -9,6 +9,7 @@ public interface IApplicationDbContext
     DbSet<Customer> Customers { get; }
     DbSet<Interaction> Interactions { get; }
     DbSet<CustomerFile> CustomerFiles { get; }
+    DbSet<PipelineDeal> PipelineDeals { get; }
     
     DbSet<Transaction> Transactions { get; }
     DbSet<BankAccount> BankAccounts { get; }
@@ -36,6 +37,9 @@ public interface IApplicationDbContext
     DbSet<EventAttendee> EventAttendees { get; }
 
     DbSet<Document> Documents { get; }
+    DbSet<Notification> Notifications { get; }
+    DbSet<Announcement> Announcements { get; }
+    DbSet<AuditLog> AuditLogs { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken);
 }

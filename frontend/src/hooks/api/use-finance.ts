@@ -1,22 +1,50 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { api } from "@/lib/api"
-import { Transaction, TransactionStatus } from "@/types/finance"
+import { Transaction, TransactionStatus, BankAccount } from "@/types/finance"
 import { TransactionFormValues } from "@/schemas/finance"
 import { toast } from "sonner"
 
 export const financeKeys = {
-    all: ["transactions"] as const,
-    lists: () => [...financeKeys.all, "list"] as const,
+    all: ["finance"] as const,
+    transactions: () => [...financeKeys.all, "transactions"] as const,
+    accounts: () => [...financeKeys.all, "accounts"] as const,
     detail: (id: string) => [...financeKeys.all, "detail", id] as const,
 }
 
 // Get All Transactions
 export function useTransactions() {
     return useQuery({
-        queryKey: financeKeys.lists(),
+        queryKey: financeKeys.transactions(),
         queryFn: async () => {
             const { data } = await api.get<Transaction[]>("/transactions")
             return data
+        }
+    })
+}
+
+// Get All Bank Accounts
+export function useBankAccounts() {
+    return useQuery({
+        queryKey: financeKeys.accounts(),
+        queryFn: async () => {
+            const { data } = await api.get<BankAccount[]>("/bankaccounts")
+            return data
+        }
+    })
+}
+
+// Create Bank Account
+export function useCreateBankAccount() {
+    const queryClient = useQueryClient()
+
+    return useMutation({
+        mutationFn: async (newAccount: { name: string, type: string, detail: string, initialBalance: number }) => {
+            const { data } = await api.post("/bankaccounts", newAccount)
+            return data as BankAccount
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: financeKeys.accounts() })
+            toast.success("Hesap Başarıyla Eklendi")
         }
     })
 }
@@ -27,20 +55,21 @@ export function useCreateTransaction() {
 
     return useMutation({
         mutationFn: async (newTx: TransactionFormValues) => {
-            // Frontend'deki Form değerlerini Backend DTO'ya uyarlıyoruz
             const payload = {
                 date: new Date().toISOString(),
                 description: newTx.description,
                 type: newTx.type,
                 category: newTx.category,
                 amount: newTx.amount,
-                status: newTx.status
+                status: newTx.status,
+                accountId: newTx.accountId
             };
             const { data } = await api.post("/transactions", payload)
             return data as Transaction
         },
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: financeKeys.lists() })
+            queryClient.invalidateQueries({ queryKey: financeKeys.transactions() })
+            queryClient.invalidateQueries({ queryKey: financeKeys.accounts() })
             toast.success("İşlem Başarıyla Eklendi")
         },
         onError: (err: any) => {
@@ -60,7 +89,7 @@ export function useUpdateTransactionStatus() {
             return data
         },
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: financeKeys.lists() })
+            queryClient.invalidateQueries({ queryKey: financeKeys.transactions() })
             toast.success("İşlem Durumu Güncellendi")
         }
     })
@@ -76,7 +105,8 @@ export function useDeleteTransaction() {
             return id
         },
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: financeKeys.lists() })
+            queryClient.invalidateQueries({ queryKey: financeKeys.transactions() })
+            queryClient.invalidateQueries({ queryKey: financeKeys.accounts() })
             toast.success("İşlem Silindi")
         },
         onError: () => {
@@ -101,3 +131,4 @@ export function useCreateInvoice() {
         }
     })
 }
+

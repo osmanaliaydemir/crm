@@ -1,53 +1,75 @@
-"use client"
-
 import React from "react"
 import { ArrowUpRight, ArrowDownRight, Wallet, FileText, Banknote, CreditCard, Landmark, TrendingUp } from "lucide-react"
 import { KpiCard } from "@/components/kpi-card"
+import { Transaction, BankAccount } from "@/types/finance"
 
-const kpiData = [
-    {
-        title: "Toplam Bakiye",
-        value: "₺345,200",
-        description: "+12% geçen aydan",
-        icon: Landmark,
-        color: "text-blue-500",
-        trendData: [
-            { value: 250000 }, { value: 275000 }, { value: 265000 }, { value: 310000 }, { value: 325000 }, { value: 345200 }
-        ]
-    },
-    {
-        title: "Aylık Tahsilat",
-        value: "₺185,000",
-        description: "+6% geçen aydan",
-        icon: TrendingUp,
-        color: "text-green-500",
-        trendData: [
-            { value: 120000 }, { value: 135000 }, { value: 160000 }, { value: 145000 }, { value: 170000 }, { value: 185000 }
-        ]
-    },
-    {
-        title: "Aylık Gider",
-        value: "₺130,700",
-        description: "-2% geçen aydan",
-        icon: ArrowDownRight,
-        color: "text-red-500",
-        trendData: [
-            { value: 150000 }, { value: 145000 }, { value: 140000 }, { value: 138000 }, { value: 135000 }, { value: 130700 }
-        ]
-    },
-    {
-        title: "Ödenecek Faturalar",
-        value: "₺24,500",
-        description: "Yaklaşan 3 Fatura",
-        icon: FileText,
-        color: "text-orange-500",
-        trendData: [
-            { value: 15000 }, { value: 28000 }, { value: 22000 }, { value: 18000 }, { value: 30000 }, { value: 24500 }
-        ]
+interface FinanceStatsProps {
+    transactions: Transaction[];
+    accounts: BankAccount[];
+}
+
+export function FinanceStats({ transactions, accounts }: FinanceStatsProps) {
+    // Toplam Bakiye (Hesapların toplamı)
+    const totalBalance = accounts.reduce((acc, curr) => acc + curr.balance, 0)
+
+    // Bu ayın tarih aralığı
+    const now = new Date()
+    const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+
+    // Aylık Tahsilat (Gelir)
+    const monthlyIncome = transactions
+        .filter(t => t.type === 'in' && new Date(t.date) >= firstDayOfMonth && t.status === 'Tamamlandı')
+        .reduce((acc, curr) => acc + curr.amount, 0)
+
+    // Aylık Gider
+    const monthlyExpense = transactions
+        .filter(t => t.type === 'out' && new Date(t.date) >= firstDayOfMonth && t.status === 'Tamamlandı')
+        .reduce((acc, curr) => acc + curr.amount, 0)
+
+    // Ödenecek Faturalar (Bekleyen Giderler)
+    const pendingExpenses = transactions
+        .filter(t => t.type === 'out' && t.status === 'Bekliyor')
+        .reduce((acc, curr) => acc + curr.amount, 0)
+
+    const formatCurrency = (amount: number) => {
+        return new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY', maximumFractionDigits: 0 }).format(amount)
     }
-]
 
-export function FinanceStats() {
+    const kpiData = [
+        {
+            title: "Toplam Bakiye",
+            value: formatCurrency(totalBalance),
+            description: "Tüm kasa ve bankalar",
+            icon: Landmark,
+            color: "text-blue-500",
+            trendData: [{ value: totalBalance * 0.8 }, { value: totalBalance * 0.9 }, { value: totalBalance }]
+        },
+        {
+            title: "Aylık Tahsilat",
+            value: formatCurrency(monthlyIncome),
+            description: "Bu ayki toplam gelir",
+            icon: TrendingUp,
+            color: "text-green-500",
+            trendData: [{ value: monthlyIncome * 0.5 }, { value: monthlyIncome * 0.8 }, { value: monthlyIncome }]
+        },
+        {
+            title: "Aylık Gider",
+            value: formatCurrency(monthlyExpense),
+            description: "Bu ayki toplam harcama",
+            icon: ArrowDownRight,
+            color: "text-red-500",
+            trendData: [{ value: monthlyExpense * 0.5 }, { value: monthlyExpense * 0.8 }, { value: monthlyExpense }]
+        },
+        {
+            title: "Bekleyen Ödemeler",
+            value: formatCurrency(pendingExpenses),
+            description: "Onay bekleyen giderler",
+            icon: FileText,
+            color: "text-orange-500",
+            trendData: [{ value: pendingExpenses * 0.7 }, { value: pendingExpenses * 0.9 }, { value: pendingExpenses }]
+        }
+    ]
+
     return (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
             {kpiData.map((kpi, index) => (

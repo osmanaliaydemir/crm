@@ -11,6 +11,7 @@ public static class DependencyInjection
         services.AddValidatorsFromAssembly(Assembly.GetExecutingAssembly());
         
         services.AddScoped<CRM.Application.Customers.Interfaces.ICustomerService, CRM.Application.Customers.Services.CustomerService>();
+        services.AddScoped<CRM.Application.Pipeline.Interfaces.IPipelineService, CRM.Application.Pipeline.Services.PipelineService>();
         
         services.AddScoped<CRM.Application.Finance.Interfaces.IBankAccountService, CRM.Application.Finance.Services.BankAccountService>();
         services.AddScoped<CRM.Application.Finance.Interfaces.ITransactionService, CRM.Application.Finance.Services.TransactionService>();
@@ -34,7 +35,10 @@ public static class DependencyInjection
 
         services.AddScoped<CRM.Application.Documents.Interfaces.IDocumentService, CRM.Application.Documents.Services.DocumentService>();
 
+        services.AddScoped<CRM.Application.Notifications.Interfaces.INotificationService, CRM.Application.Notifications.Services.NotificationService>();
+        services.AddScoped<CRM.Application.Announcements.Interfaces.IAnnouncementService, CRM.Application.Announcements.Services.AnnouncementService>();
         services.AddScoped<CRM.Application.Reports.Interfaces.IReportingService, CRM.Application.Reports.Services.ReportingService>();
+        services.AddScoped<CRM.Application.AuditLogs.Interfaces.IAuditLogService, CRM.Application.AuditLogs.Services.AuditLogService>();
 
         return services;
     }

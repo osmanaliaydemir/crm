@@ -80,9 +80,43 @@ export function useUpdateTaskStatus() {
             return data
         },
         onSuccess: () => {
-            // Since we might not know which project id offhand without context, invalidate all project details
             queryClient.invalidateQueries({ queryKey: projectKeys.all })
             toast.success("Görev durumu güncellendi.")
+        }
+    })
+}
+
+// Update Project (Note: Backend might need this endpoint)
+export function useUpdateProject() {
+    const queryClient = useQueryClient()
+
+    return useMutation({
+        mutationFn: async ({ id, data }: { id: string, data: any }) => {
+            const result = await api.put(`/projects/${id}`, data)
+            return result.data
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: projectKeys.all })
+            toast.success("Proje güncellendi.")
+        }
+    })
+}
+
+// Delete Project (Note: Backend might need this endpoint)
+export function useDeleteProject() {
+    const queryClient = useQueryClient()
+
+    return useMutation({
+        mutationFn: async (id: string) => {
+            await api.delete(`/projects/${id}`)
+            return id
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: projectKeys.lists() })
+            toast.success("Proje silindi.")
+        },
+        onError: () => {
+            toast.error("Proje silinemedi. Backend desteği eksik olabilir.")
         }
     })
 }

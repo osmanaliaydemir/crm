@@ -81,3 +81,52 @@ export function useDeleteEvent() {
         }
     })
 }
+
+// === ATTENDEES (Katılımcı Yönetimi) ===
+
+export function useAddAttendee() {
+    const queryClient = useQueryClient()
+
+    return useMutation({
+        mutationFn: async ({ eventId, userId }: { eventId: string, userId: string }) => {
+            const { data } = await api.post(`/events/${eventId}/attendees`, { eventId, userId })
+            return data
+        },
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: calendarKeys.eventDetail(variables.eventId) })
+            toast.success("Katılımcı eklendi.")
+        },
+        onError: (err: any) => {
+            toast.error("Katılımcı Eklenemedi", { description: err?.response?.data || "Bilinmeyen bir hata oluştu." })
+        }
+    })
+}
+
+export function useUpdateAttendeeStatus() {
+    const queryClient = useQueryClient()
+
+    return useMutation({
+        mutationFn: async ({ attendeeId, status }: { attendeeId: string, status: string }) => {
+            const { data } = await api.patch(`/events/attendees/${attendeeId}/status`, { id: attendeeId, status })
+            return data
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: calendarKeys.all })
+            toast.success("Katılım durumu güncellendi.")
+        }
+    })
+}
+
+export function useRemoveAttendee() {
+    const queryClient = useQueryClient()
+
+    return useMutation({
+        mutationFn: async (attendeeId: string) => {
+            await api.delete(`/events/attendees/${attendeeId}`)
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: calendarKeys.all })
+            toast.success("Katılımcı çıkarıldı.")
+        }
+    })
+}

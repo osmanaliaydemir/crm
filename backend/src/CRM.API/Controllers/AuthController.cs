@@ -46,7 +46,8 @@ public class AuthController : ControllerBase
                 Name = user.Name,
                 Email = user.Email,
                 Role = user.Role,
-                Avatar = user.Avatar
+                Avatar = user.Avatar,
+                CustomerId = user.CustomerId
             }
         });
     }
@@ -93,8 +94,29 @@ public class AuthController : ControllerBase
             Name = user.Name,
             Email = user.Email,
             Role = user.Role,
-            Avatar = user.Avatar
+            Avatar = user.Avatar,
+            CustomerId = user.CustomerId
         });
+    }
+
+    [Authorize(Policy = "EmployeeAccess")]
+    [HttpGet("users")]
+    public async Task<IActionResult> GetAllUsers()
+    {
+        var users = await _context.Users
+            .AsNoTracking()
+            .Select(u => new UserDto
+            {
+                Id = u.Id,
+                Name = u.Name,
+                Email = u.Email,
+                Role = u.Role,
+                Avatar = u.Avatar,
+                CustomerId = u.CustomerId
+            })
+            .ToListAsync();
+
+        return Ok(users);
     }
 
     [Authorize]
@@ -127,8 +149,13 @@ public class AuthController : ControllerBase
             new Claim(ClaimTypes.Name, user.Name),
             new Claim(ClaimTypes.Email, user.Email),
             new Claim(ClaimTypes.Role, user.Role),
-            new Claim("role", user.Role) // For legacy / general role mappings
-        };
+            new Claim("role", user.Role)
+        }.ToList();
+
+        if (user.CustomerId.HasValue)
+        {
+            claims.Add(new Claim("customer_id", user.CustomerId.ToString()!));
+        }
 
         int expiryMinutes = int.TryParse(jwtSettings["ExpiryMinutes"], out var parsed) ? parsed : 1440;
 
@@ -173,4 +200,5 @@ public class UserDto
     public string Email { get; set; } = string.Empty;
     public string Role { get; set; } = string.Empty;
     public string? Avatar { get; set; }
+    public Guid? CustomerId { get; set; }
 }

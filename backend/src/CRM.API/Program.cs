@@ -60,7 +60,9 @@ builder.Services.AddAuthorizationBuilder()
     .AddPolicy("HRAccess", p => p.RequireRole("admin", "hr"))
     .AddPolicy("FinanceAccess", p => p.RequireRole("admin", "finance"))
     .AddPolicy("SalesAccess", p => p.RequireRole("admin", "sales"))
-    .AddPolicy("EmployeeAccess", p => p.RequireRole("admin", "hr", "employee"));
+    .AddPolicy("EmployeeAccess", p => p.RequireRole("admin", "hr", "employee"))
+    .AddPolicy("B2BAccess", p => p.RequireRole("admin", "customer"))
+    .AddPolicy("CustomerOnly", p => p.RequireRole("customer"));
 
 var app = builder.Build();
 

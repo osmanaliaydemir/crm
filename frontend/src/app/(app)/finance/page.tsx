@@ -40,13 +40,11 @@ import { TransactionFormDialog } from "./components/transaction-form-dialog"
 import { InvoiceGenerator } from "./components/invoice-generator"
 import { TableSkeleton } from "@/components/ui/table-skeleton"
 
-import { useTransactions, useCreateTransaction, useUpdateTransactionStatus, useDeleteTransaction } from "@/hooks/api/use-finance"
+import { useTransactions, useBankAccounts, useCreateBankAccount, useCreateTransaction, useUpdateTransactionStatus, useDeleteTransaction } from "@/hooks/api/use-finance"
 
 export default function FinancePage() {
-    const { data: transactions = [], isLoading } = useTransactions()
-    const { mutate: createTransaction } = useCreateTransaction()
-    const { mutate: updateTransaction } = useUpdateTransactionStatus()
-    const { mutate: deleteTransaction } = useDeleteTransaction()
+    const { data: accounts = [], isLoading: accountsLoading } = useBankAccounts()
+    const { mutateAsync: createAccount } = useCreateBankAccount()
 
     const [searchTerm, setSearchTerm] = useState("")
 
@@ -54,14 +52,9 @@ export default function FinancePage() {
     const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
     const [txToDelete, setTxToDelete] = useState<string | null>(null)
 
-    // Bank Accounts State (Mock)
+    // Bank Accounts State (Dinamik)
     const [isAccountDialogOpen, setIsAccountDialogOpen] = useState(false)
     const [newAccountData, setNewAccountData] = useState({ name: "", type: "bank", balance: "0", detail: "" })
-    const [accounts, setAccounts] = useState([
-        { id: 1, name: "Akbank Ticari", type: "bank", detail: "TR65 0000...", balance: 250500 },
-        { id: 2, name: "Garanti POS BSMV", type: "credit", detail: "Kredi Kartı Bekleyen", balance: 82400 },
-        { id: 3, name: "Merkez TL Kasa", type: "cash", detail: "Nakit", balance: 12300 }
-    ])
 
     const getAccountIcon = (type: string) => {
         switch (type) {
@@ -85,25 +78,31 @@ export default function FinancePage() {
         return new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY', maximumFractionDigits: 0 }).format(amount)
     }
 
-    const handleAddAccount = () => {
+    const handleAddAccount = async () => {
         if (!newAccountData.name) {
             toast.error("Lütfen hesap adını girin.")
             return
         }
 
-        const newAccount = {
-            id: Date.now(),
-            name: newAccountData.name,
-            type: newAccountData.type,
-            detail: newAccountData.detail || (newAccountData.type === 'cash' ? 'Nakit' : 'Yeni Hesap'),
-            balance: parseFloat(newAccountData.balance) || 0
-        }
+        try {
+            await createAccount({
+                name: newAccountData.name,
+                type: newAccountData.type,
+                detail: newAccountData.detail || (newAccountData.type === 'cash' ? 'Nakit' : 'Yeni Hesap'),
+                initialBalance: parseFloat(newAccountData.balance) || 0
+            })
 
-        setAccounts([newAccount, ...accounts])
-        setNewAccountData({ name: "", type: "bank", balance: "0", detail: "" })
-        setIsAccountDialogOpen(false)
-        toast.success(`${newAccountData.name} hesabı başarıyla eklendi.`)
+            setNewAccountData({ name: "", type: "bank", balance: "0", detail: "" })
+            setIsAccountDialogOpen(false)
+        } catch (error) {
+            // Hata handling useCreateBankAccount içinde toast ile yapılıyor
+        }
     }
+
+    const { data: transactions = [], isLoading: txLoading } = useTransactions()
+    const { mutate: createTransaction } = useCreateTransaction()
+    const { mutate: updateTransaction } = useUpdateTransactionStatus()
+    const { mutate: deleteTransaction } = useDeleteTransaction()
 
     const onSubmit = (data: TransactionFormValues) => {
         createTransaction(data)
@@ -146,7 +145,7 @@ export default function FinancePage() {
 
             {/* Finansal Özet Kartları */}
             <div className="print:hidden">
-                <FinanceStats />
+                <FinanceStats transactions={transactions} accounts={accounts} />
             </div>
 
             <div className="grid gap-6 md:grid-cols-7 h-full print:block print:h-auto">
@@ -205,7 +204,7 @@ export default function FinancePage() {
                         </div>
 
                         <TabsContent value="transactions" className="p-0 m-0 flex-1 min-h-0 overflow-hidden relative data-[state=active]:block">
-                            {isLoading ? (
+                            {txLoading ? (
                                 <div className="absolute inset-0 z-10 bg-background/50 flex p-4 justify-center backdrop-blur-[1px]">
                                     <TableSkeleton columns={6} rows={5} />
                                 </div>
@@ -295,6 +294,7 @@ export default function FinancePage() {
                 isOpen={isDialogOpen}
                 onOpenChange={setIsDialogOpen}
                 onSubmit={onSubmit}
+                accounts={accounts}
             />
 
             <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>

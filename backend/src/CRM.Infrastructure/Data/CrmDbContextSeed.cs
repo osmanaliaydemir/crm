@@ -55,7 +55,13 @@ public static class CrmDbContextSeed
             context.Users.Add(employeeUser);
         }
         else { employeeUserGuid = await context.Users.Where(u => u.Email == "employee@crm.com").Select(u => u.Id).FirstOrDefaultAsync(); }
-        
+
+        if (!await context.Users.AnyAsync(u => u.Email == "customer@techcorp.com"))
+        {
+            var customerUser = new User { Id = Guid.NewGuid(), Name = "Ahmet Müşteri", Email = "customer@techcorp.com", Role = "customer", CustomerId = globalCustomer1, PasswordHash = HashPassword("User123!"), CreatedAt = DateTime.UtcNow, CreatedBy = "Seed" };
+            context.Users.Add(customerUser);
+        }
+
         await context.SaveChangesAsync();
 
         if (!context.Customers.Any())
@@ -311,6 +317,124 @@ public static class CrmDbContextSeed
             });
 
             context.Tickets.Add(t1);
+            await context.SaveChangesAsync();
+        }
+
+        if (!context.PipelineDeals.Any())
+        {
+            var d1 = new PipelineDeal
+            {
+                Title = "Mobil Uygulama Geliştirme Paketi",
+                Description = "Yeni startup müşterisi için iOS/Android native paket.",
+                Stage = CRM.Domain.Enums.DealStage.Lead,
+                Value = 120000,
+                Probability = 20,
+                CustomerId = globalCustomer2,
+                AssignedToId = salesUserGuid,
+                ExpectedCloseDate = DateTime.UtcNow.AddMonths(2),
+                SortOrder = 0,
+                CreatedAt = DateTime.UtcNow,
+                CreatedBy = "Seed"
+            };
+
+            var d2 = new PipelineDeal
+            {
+                Title = "CRM Özelleştirme Projesi",
+                Description = "TechCorp için özel raporlama modülleri.",
+                Stage = CRM.Domain.Enums.DealStage.Proposal,
+                Value = 45000,
+                Probability = 60,
+                CustomerId = globalCustomer1,
+                AssignedToId = salesUserGuid,
+                ExpectedCloseDate = DateTime.UtcNow.AddDays(15),
+                SortOrder = 0,
+                CreatedAt = DateTime.UtcNow,
+                CreatedBy = "Seed"
+            };
+
+            var d3 = new PipelineDeal
+            {
+                Title = "Yıllık Bakım Anlaşması",
+                Description = "Tüm sunucu ve veritabanı bakımı.",
+                Stage = CRM.Domain.Enums.DealStage.Won,
+                Value = 75000,
+                Probability = 100,
+                CustomerId = globalCustomer1,
+                AssignedToId = salesUserGuid,
+                ExpectedCloseDate = DateTime.UtcNow.AddDays(-5),
+                SortOrder = 0,
+                CreatedAt = DateTime.UtcNow,
+                CreatedBy = "Seed"
+            };
+
+            context.PipelineDeals.AddRange(d1, d2, d3);
+            await context.SaveChangesAsync();
+        }
+
+        if (!context.Notifications.Any())
+        {
+            var n1 = new Notification
+            {
+                UserId = adminGuid,
+                Type = CRM.Domain.Enums.NotificationType.Finance,
+                Title = "Ödeme Alındı",
+                Description = "TechCorp Bilişim A.Ş. tarafından 50.000 TL ödeme yapıldı.",
+                IsRead = false,
+                CreatedAt = DateTime.UtcNow.AddHours(-2),
+                CreatedBy = "Seed"
+            };
+
+            var n2 = new Notification
+            {
+                UserId = adminGuid,
+                Type = CRM.Domain.Enums.NotificationType.Calendar,
+                Title = "Toplantı Hatırlatıcı",
+                Description = "1 saat sonra 'CRM Standup' toplantısı başlayacak.",
+                IsRead = false,
+                CreatedAt = DateTime.UtcNow.AddMinutes(-30),
+                CreatedBy = "Seed"
+            };
+
+            var n3 = new Notification
+            {
+                UserId = adminGuid,
+                Type = CRM.Domain.Enums.NotificationType.System,
+                Title = "Sistem Güncellemesi",
+                Description = "Backend API v1.2 sürümüne başarıyla güncellendi.",
+                IsRead = true,
+                CreatedAt = DateTime.UtcNow.AddDays(-1),
+                CreatedBy = "Seed"
+            };
+
+            context.Notifications.AddRange(n1, n2, n3);
+            await context.SaveChangesAsync();
+        }
+
+        if (!context.Announcements.Any())
+        {
+            var a1 = new Announcement
+            {
+                Title = "Ramazan Bayramı Tatili Hakkında",
+                Content = "Ramazan Bayramı dolayısıyla 30 Mart - 1 Nisan tarihleri arasında ofisimiz kapalı olacaktır. Tüm çalışanlarımıza iyi bayramlar dileriz.",
+                Type = "Genel",
+                IsActive = true,
+                PublishedById = adminGuid,
+                CreatedAt = DateTime.UtcNow.AddDays(-5),
+                CreatedBy = "Seed"
+            };
+
+            var a2 = new Announcement
+            {
+                Title = "2026 Yılı Genel Kurulu",
+                Content = "Şirketimizin 2026 yılı Olağan Genel Kurul toplantısı 15 Nisan tarihinde saat 14:00'te Zoom üzerinden yapılacaktır.",
+                Type = "İdari",
+                IsActive = true,
+                PublishedById = adminGuid,
+                CreatedAt = DateTime.UtcNow.AddDays(-2),
+                CreatedBy = "Seed"
+            };
+
+            context.Announcements.AddRange(a1, a2);
             await context.SaveChangesAsync();
         }
     }

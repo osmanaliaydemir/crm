@@ -124,3 +124,93 @@ export function useUpdateLeaveStatus() {
         }
     })
 }
+
+// === PERFORMANCE EVALUATIONS ===
+
+export function usePerformanceEvaluations() {
+    return useQuery({
+        queryKey: ["hr", "evaluations"],
+        queryFn: async () => {
+            const { data } = await api.get("/performanceevaluations")
+            return data
+        }
+    })
+}
+
+export function useMyEvaluations() {
+    return useQuery({
+        queryKey: ["hr", "my-evaluations"],
+        queryFn: async () => {
+            const { data } = await api.get("/performanceevaluations/my-evaluations")
+            return data
+        }
+    })
+}
+
+export function useCreatePerformanceEvaluation() {
+    const queryClient = useQueryClient()
+
+    return useMutation({
+        mutationFn: async (evalData: any) => {
+            const { data } = await api.post("/performanceevaluations", evalData)
+            return data
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ["hr", "evaluations"] })
+            toast.success("Değerlendirme başarıyla kaydedildi.")
+        }
+    })
+}
+
+// === PAYROLLS ===
+
+export function usePayrolls() {
+    return useQuery({
+        queryKey: ["hr", "payrolls"],
+        queryFn: async () => {
+            const { data } = await api.get("/payrolls")
+            return data
+        }
+    })
+}
+
+export function useMyPayrolls() {
+    return useQuery({
+        queryKey: ["hr", "my-payrolls"],
+        queryFn: async () => {
+            const { data } = await api.get("/payrolls/my-payrolls")
+            return data
+        }
+    })
+}
+
+export function useCreatePayroll() {
+    const queryClient = useQueryClient()
+
+    return useMutation({
+        mutationFn: async (payrollData: any) => {
+            const { data } = await api.post("/payrolls", payrollData)
+            return data
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ["hr", "payrolls"] })
+            toast.success("Bordro başarıyla oluşturuldu.")
+        }
+    })
+}
+
+export function useUpdatePayrollStatus() {
+    const queryClient = useQueryClient()
+
+    return useMutation({
+        mutationFn: async ({ id, status, paymentDate }: { id: string, status: string, paymentDate?: string }) => {
+            const { data } = await api.patch(`/payrolls/${id}/status`, { id, status, paymentDate })
+            return data
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ["hr", "payrolls"] })
+            queryClient.invalidateQueries({ queryKey: ["hr", "my-payrolls"] })
+            toast.success("Bordro durumu güncellendi.")
+        }
+    })
+}

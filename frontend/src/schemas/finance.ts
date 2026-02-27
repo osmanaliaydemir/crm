@@ -7,7 +7,8 @@ export const transactionSchema = z.object({
     type: z.enum(["in", "out"], { message: "İşlem tipi seçimi zorunludur." }),
     category: z.string().min(2, "Kategori seçimi zorunludur."),
     amount: z.coerce.number().min(0, "Tutar 0'dan küçük olamaz."),
-    status: z.enum(["Tamamlandı", "Bekliyor", "İptal Edildi"], { message: "Durum seçimi zorunludur." })
+    status: z.enum(["Tamamlandı", "Bekliyor", "İptal Edildi"], { message: "Durum seçimi zorunludur." }),
+    accountId: z.string().optional()
 });
 
 export type TransactionFormValues = z.infer<typeof transactionSchema>;
