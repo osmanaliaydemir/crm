@@ -100,6 +100,15 @@ public class CrmDbContext : DbContext, IApplicationDbContext
             relationship.DeleteBehavior = DeleteBehavior.Restrict;
         }
 
+        // Decimal Precision configurations to avoid SQL Server warnings
+        foreach (var property in builder.Model.GetEntityTypes()
+            .SelectMany(t => t.GetProperties())
+            .Where(p => p.ClrType == typeof(decimal)))
+        {
+            property.SetPrecision(18);
+            property.SetScale(2);
+        }
+
         base.OnModelCreating(builder);
     }
 

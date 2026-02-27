@@ -37,87 +37,45 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select"
-
-type AuditLog = {
-    id: string;
-    timestamp: string;
-    user: string;
-    action: string;
-    module: "Sistem" | "Kullanıcı Yönetimi" | "Finans" | "Satış" | "İnsan Kaynakları";
-    severity: "low" | "medium" | "high" | "critical";
-    details: string;
-    ipAddress: string;
-}
-
-const mockAuditLogs: AuditLog[] = [
-    {
-        id: "LOG-9283",
-        timestamp: "2026-02-26 14:32:05",
-        user: "Osman Ali",
-        action: "Kullanıcı Silindi",
-        module: "Kullanıcı Yönetimi",
-        severity: "high",
-        details: "Ahmet Yılmaz (ID: 4) kullanıcısı sistemden kalıcı olarak silindi.",
-        ipAddress: "192.168.1.105"
-    },
-    {
-        id: "LOG-9282",
-        timestamp: "2026-02-26 13:15:22",
-        user: "Zeynep Ata",
-        action: "Fırsat Kazanıldı",
-        module: "Satış",
-        severity: "low",
-        details: "MegaCorp Projesi 'Kazanıldı' statüsüne çekildi. Tutar: ₺150,000",
-        ipAddress: "10.0.0.42"
-    },
-    {
-        id: "LOG-9281",
-        timestamp: "2026-02-26 10:45:10",
-        user: "Osman Ali",
-        action: "Tema Değiştirildi",
-        module: "Sistem",
-        severity: "low",
-        details: "Ana tema rengi 'Okyanus Mavisi' olarak güncellendi.",
-        ipAddress: "192.168.1.105"
-    },
-    {
-        id: "LOG-9280",
-        timestamp: "2026-02-25 18:20:00",
-        user: "Mehmet Kaya",
-        action: "Hatalı Giriş Denemesi",
-        module: "Sistem",
-        severity: "medium",
-        details: "Ardışık 3 hatalı şifre girişi tespit edildi.",
-        ipAddress: "212.156.44.12"
-    },
-    {
-        id: "LOG-9279",
-        timestamp: "2026-02-25 15:10:44",
-        user: "Sistem Otomasyonu",
-        action: "Toplu Fatura Kesimi",
-        module: "Finans",
-        severity: "medium",
-        details: "Aylık abonelik faturaları otomatik olarak oluşturuldu (120 Adet).",
-        ipAddress: "localhost"
-    },
-    {
-        id: "LOG-9278",
-        timestamp: "2026-02-24 09:00:15",
-        user: "Osman Ali",
-        action: "Rol Yetkisi Değiştirildi",
-        module: "Kullanıcı Yönetimi",
-        severity: "critical",
-        details: "'Satış Yöneticisi' rolünün 'Finans' modülü erişimi kaldırıldı.",
-        ipAddress: "192.168.1.105"
-    }
-]
+import { useAuditLogs } from "@/hooks/api/use-audit-logs"
+import { Skeleton } from "@/components/ui/skeleton"
 
 export default function AuditLogsPage() {
+    const { data: logs = [], isLoading, refetch } = useAuditLogs()
     const [searchTerm, setSearchTerm] = useState("")
     const [moduleFilter, setModuleFilter] = useState("all")
     const [severityFilter, setSeverityFilter] = useState("all")
 
-    const filteredLogs = mockAuditLogs.filter(log => {
+    // Backend verilerini UI formatına map et
+    const mappedLogs = logs.map(log => {
+        // Basit bir severity tahmini (UI için)
+        let severity: "low" | "medium" | "high" | "critical" = "low";
+        const actionLower = log.action.toLowerCase();
+
+        if (actionLower.includes("sil") || actionLower.includes("delete")) severity = "high";
+        else if (actionLower.includes("hata") || actionLower.includes("fail") || actionLower.includes("deneme")) severity = "medium";
+        else if (actionLower.includes("yetki") || actionLower.includes("role") || actionLower.includes("permission")) severity = "critical";
+
+        // Modül mapping
+        let module: string = log.entityName || "Sistem";
+        if (module.includes("User") || module.includes("Account")) module = "Kullanıcı Yönetimi";
+        else if (module.includes("Finance") || module.includes("Transaction") || module.includes("Invoice")) module = "Finans";
+        else if (module.includes("Deal") || module.includes("Lead")) module = "Satış";
+        else if (module.includes("Employee") || module.includes("Leave")) module = "İnsan Kaynakları";
+
+        return {
+            id: log.id,
+            timestamp: new Date(log.timestamp).toLocaleString("tr-TR"),
+            user: log.userEmail || "Bilinmeyen Kullanıcı",
+            action: log.action,
+            module: module as any,
+            severity: severity,
+            details: log.newValues || log.action,
+            ipAddress: log.ipAddress || "0.0.0.0"
+        }
+    })
+
+    const filteredLogs = mappedLogs.filter(log => {
         const matchesSearch =
             log.action.toLowerCase().includes(searchTerm.toLowerCase()) ||
             log.user.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -162,8 +120,8 @@ export default function AuditLogsPage() {
                     </p>
                 </div>
                 <div className="flex gap-2 w-full md:w-auto">
-                    <Button variant="outline" className="w-full md:w-auto shadow-sm">
-                        <RefreshCw className="h-4 w-4 mr-2" /> Yenile
+                    <Button variant="outline" className="w-full md:w-auto shadow-sm" onClick={() => refetch()} disabled={isLoading}>
+                        <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} /> Yenile
                     </Button>
                     <Button className="w-full md:w-auto shadow-sm">
                         <Download className="h-4 w-4 mr-2" /> .CSV İndir
@@ -229,7 +187,18 @@ export default function AuditLogsPage() {
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {filteredLogs.length > 0 ? (
+                                {isLoading ? (
+                                    Array.from({ length: 5 }).map((_, i) => (
+                                        <TableRow key={i}>
+                                            <TableCell className="pl-6"><Skeleton className="h-4 w-24" /></TableCell>
+                                            <TableCell><Skeleton className="h-4 w-32" /></TableCell>
+                                            <TableCell><Skeleton className="h-4 w-40" /></TableCell>
+                                            <TableCell className="text-center"><Skeleton className="h-4 w-16 mx-auto" /></TableCell>
+                                            <TableCell><Skeleton className="h-4 w-60" /></TableCell>
+                                            <TableCell className="text-right pr-6"><Skeleton className="h-4 w-20 ml-auto" /></TableCell>
+                                        </TableRow>
+                                    ))
+                                ) : filteredLogs.length > 0 ? (
                                     filteredLogs.map((log, index) => (
                                         <motion.tr
                                             initial={{ opacity: 0, y: 10 }}

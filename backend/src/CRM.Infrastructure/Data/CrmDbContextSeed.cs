@@ -11,16 +11,61 @@ public static class CrmDbContextSeed
         // Add basic migration execution first (Program.cs should normally do this, but just in case)
         await context.Database.MigrateAsync();
 
-        var hrUserGuid = Guid.NewGuid();
-        var salesUserGuid = Guid.NewGuid();
-        var financeUserGuid = Guid.NewGuid();
-        var employeeUserGuid = Guid.NewGuid();
         var globalCustomer1 = Guid.NewGuid();
         var globalCustomer2 = Guid.NewGuid();
         var project1Guid = Guid.NewGuid();
         var product1Guid = Guid.NewGuid();
 
+        // 1. Önce Müşterileri oluştur (Çünkü kullanıcılar müşterilere referans veriyor)
+        if (!context.Customers.Any())
+        {
+            var c1 = new Customer
+            {
+                Id = globalCustomer1,
+                Type = "Kurumsal",
+                Name = "TechCorp Bilişim A.Ş.",
+                ContactName = "Ahmet Yılmaz",
+                Email = "ahmet@techcorp.com",
+                Phone = "+90 532 111 22 33",
+                Status = "Aktif",
+                City = "İstanbul",
+                CreatedAt = DateTime.UtcNow,
+                CreatedBy = "Seed"
+            };
+
+            var c2 = new Customer
+            {
+                Id = globalCustomer2,
+                Type = "Bireysel",
+                ContactName = "Zeynep Demir",
+                Email = "zeynep@hotmail.com",
+                Phone = "+90 533 444 55 66",
+                Status = "Aktif",
+                City = "Ankara",
+                CreatedAt = DateTime.UtcNow,
+                CreatedBy = "Seed"
+            };
+            
+            context.Customers.AddRange(c1, c2);
+            await context.SaveChangesAsync();
+        }
+        else
+        {
+            var custs = await context.Customers.Take(2).ToListAsync();
+            if (custs.Any())
+            {
+                globalCustomer1 = custs[0].Id;
+                if(custs.Count > 1) globalCustomer2 = custs[1].Id;
+            }
+        }
+
+        // 2. Sonra Kullanıcıları oluştur (CustomerId referansı için müşteriler hazır olmalı)
+        var hrUserGuid = Guid.NewGuid();
+        var salesUserGuid = Guid.NewGuid();
+        var financeUserGuid = Guid.NewGuid();
+        var employeeUserGuid = Guid.NewGuid();
         var adminGuid = Guid.NewGuid();
+
         if (!await context.Users.AnyAsync(u => u.Email == "admin@crm.com"))
         {
             var adminUser = new User { Id = adminGuid, Email = "admin@crm.com", Role = "admin", PasswordHash = HashPassword("Admin123!"), CreatedAt = DateTime.UtcNow, CreatedBy = "Seed" };
@@ -63,48 +108,6 @@ public static class CrmDbContextSeed
         }
 
         await context.SaveChangesAsync();
-
-        if (!context.Customers.Any())
-        {
-            var c1 = new Customer
-            {
-                Id = globalCustomer1,
-                Type = "Kurumsal",
-                Name = "TechCorp Bilişim A.Ş.",
-                ContactName = "Ahmet Yılmaz",
-                Email = "ahmet@techcorp.com",
-                Phone = "+90 532 111 22 33",
-                Status = "Aktif",
-                City = "İstanbul",
-                CreatedAt = DateTime.UtcNow,
-                CreatedBy = "Seed"
-            };
-
-            var c2 = new Customer
-            {
-                Id = globalCustomer2,
-                Type = "Bireysel",
-                ContactName = "Zeynep Demir",
-                Email = "zeynep@hotmail.com",
-                Phone = "+90 533 444 55 66",
-                Status = "Aktif",
-                City = "Ankara",
-                CreatedAt = DateTime.UtcNow,
-                CreatedBy = "Seed"
-            };
-            
-            context.Customers.AddRange(c1, c2);
-            await context.SaveChangesAsync();
-        }
-        else
-        {
-            var custs = await context.Customers.Take(2).ToListAsync();
-            if (custs.Any())
-            {
-                globalCustomer1 = custs[0].Id;
-                if(custs.Count > 1) globalCustomer2 = custs[1].Id;
-            }
-        }
         
         if (!context.Products.Any())
         {
