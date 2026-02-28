@@ -45,6 +45,6 @@ export const config = {
          * - _next/image (Görsel optimizasyon dosyaları)
          * - favicon.ico (Sekme ikonu)
          */
-        '/((?!api|_next/static|_next/image|favicon.ico).*)',
+        '/((?!api|_next/static|_next/image|favicon.ico|manifest.json).*)',
     ],
 }
